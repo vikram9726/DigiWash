@@ -1,38 +1,9 @@
-<?php
-include("../config/db.php");
-
-$msg="";
-
-if(isset($_POST['signup'])){
-
-$name=$_POST['name'];
-$email=$_POST['email'];
-$phone=$_POST['phone'];
-
-$password=password_hash($_POST['password'],PASSWORD_DEFAULT);
-
-$stmt=$conn->prepare(
-"INSERT INTO users(name,email,phone,password)
-VALUES(?,?,?,?)"
-);
-
-$stmt->bind_param("ssss",$name,$email,$phone,$password);
-
-if($stmt->execute()){
-$msg="Account created successfully";
-}else{
-$msg="Email already exists";
-}
-
-}
-?>
-
 <!DOCTYPE html>
 <html>
 
 <head>
 
-<title>DigiWash Signup</title>
+<title>Signup</title>
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 
@@ -52,11 +23,7 @@ $msg="Email already exists";
 
 <h3 class="text-center">Create Account</h3>
 
-<?php if($msg!=""){ ?>
-<div class="alert alert-info"><?php echo $msg; ?></div>
-<?php } ?>
-
-<form method="POST">
+<form method="POST" action="signup_process.php">
 
 <input class="form-control mb-3" name="name" placeholder="Name" required>
 
@@ -66,13 +33,14 @@ $msg="Email already exists";
 
 <input type="password" class="form-control mb-3" name="password" placeholder="Password" required>
 
-<button class="btn btn-success w-100" name="signup">
+<button class="btn btn-success w-100">
 Signup
 </button>
 
 </form>
 
 </div>
+
 </div>
 
 </div>
@@ -82,5 +50,4 @@ Signup
 </div>
 
 </body>
-
 </html>
