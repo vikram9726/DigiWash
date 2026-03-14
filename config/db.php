@@ -3,12 +3,12 @@
 $host = "localhost";
 $user = "root";
 $password = "";
-$database = "digiwash_db";
+$db = "digiwash_db";
 
-$conn = mysqli_connect($host,$user,$password,$database);
+$conn = new mysqli($host,$user,$password,$db);
 
-if(!$conn){
-    die("Connection Failed");
+if($conn->connect_error){
+die("Connection failed: ".$conn->connect_error);
 }
 
 ?>

@@ -1,22 +1,27 @@
 <?php
 include("../config/db.php");
 
+$msg="";
+
 if(isset($_POST['signup'])){
 
-$name = $_POST['name'];
-$email = $_POST['email'];
-$phone = $_POST['phone'];
-$password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+$name=$_POST['name'];
+$email=$_POST['email'];
+$phone=$_POST['phone'];
 
-$query = "INSERT INTO users(name,email,phone,password)
-VALUES('$name','$email','$phone','$password')";
+$password=password_hash($_POST['password'],PASSWORD_DEFAULT);
 
-$result = mysqli_query($conn,$query);
+$stmt=$conn->prepare(
+"INSERT INTO users(name,email,phone,password)
+VALUES(?,?,?,?)"
+);
 
-if($result){
-echo "Signup successful";
+$stmt->bind_param("ssss",$name,$email,$phone,$password);
+
+if($stmt->execute()){
+$msg="Account created successfully";
 }else{
-echo "Error creating account";
+$msg="Email already exists";
 }
 
 }
@@ -24,29 +29,58 @@ echo "Error creating account";
 
 <!DOCTYPE html>
 <html>
+
 <head>
+
 <title>DigiWash Signup</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
 </head>
 
-<body>
+<body class="bg-light">
 
-<h2>Signup</h2>
+<div class="container mt-5">
+
+<div class="row justify-content-center">
+
+<div class="col-md-4">
+
+<div class="card shadow">
+
+<div class="card-body">
+
+<h3 class="text-center">Create Account</h3>
+
+<?php if($msg!=""){ ?>
+<div class="alert alert-info"><?php echo $msg; ?></div>
+<?php } ?>
 
 <form method="POST">
 
-<input type="text" name="name" placeholder="Name" required><br><br>
+<input class="form-control mb-3" name="name" placeholder="Name" required>
 
-<input type="email" name="email" placeholder="Email" required><br><br>
+<input class="form-control mb-3" name="email" placeholder="Email" required>
 
-<input type="text" name="phone" placeholder="Phone"><br><br>
+<input class="form-control mb-3" name="phone" placeholder="Phone">
 
-<input type="password" name="password" placeholder="Password" required><br><br>
+<input type="password" class="form-control mb-3" name="password" placeholder="Password" required>
 
-<button type="submit" name="signup">Signup</button>
+<button class="btn btn-success w-100" name="signup">
+Signup
+</button>
 
 </form>
 
-<a href="login.php">Already have account? Login</a>
+</div>
+</div>
+
+</div>
+
+</div>
+
+</div>
 
 </body>
+
 </html>
