@@ -16,8 +16,15 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $data = json_decode(file_get_contents('php://input'), true);
-$action = $data['action'] ?? '';
+$action = $data['action'] ?? $_POST['action'] ?? '';
 $userId = $_SESSION['user_id'];
+
+// CSRF Protection Check
+$headers = getallheaders();
+$csrfToken = $headers['X-CSRF-Token'] ?? $data['csrf_token'] ?? $_POST['csrf_token'] ?? '';
+if (!hash_equals($_SESSION['csrf_token'], $csrfToken)) {
+    respond(false, 'Invalid CSRF token. Request denied.');
+}
 
 if ($action === 'update_profile') {
     $name = filter_var($data['name'] ?? '', FILTER_SANITIZE_STRING);

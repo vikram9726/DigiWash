@@ -5,6 +5,7 @@ USE digiwash;
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     phone VARCHAR(15) UNIQUE NOT NULL,
+    firebase_uid VARCHAR(128) UNIQUE DEFAULT NULL,
     role ENUM('admin', 'delivery', 'customer') DEFAULT 'customer',
     name VARCHAR(100),
     shop_address TEXT,

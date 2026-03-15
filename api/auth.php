@@ -18,64 +18,137 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $data = json_decode(file_get_contents('php://input'), true);
 $action = $data['action'] ?? '';
 
-if ($action === 'login') {
-    $phone = filter_var($data['phone'] ?? '', FILTER_SANITIZE_STRING);
+// CSRF Protection Check for authenticated actions (like logout)
+if ($action !== 'firebase_login' && $action !== 'login') {
+    $headers = getallheaders();
+    $csrfToken = $headers['X-CSRF-Token'] ?? (is_array($data) ? ($data['csrf_token'] ?? '') : '') ?? $_POST['csrf_token'] ?? '';
     
-    // Basic validation
-    if (empty($phone) || !preg_match('/^[0-9]{10}$/', $phone)) {
-        respond(false, 'Please enter a valid 10-digit mobile number.');
+    if (!isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrfToken)) {
+        respond(false, 'Invalid CSRF token. Request denied.');
+    }
+}
+
+if ($action === 'firebase_login') {
+    $idToken = $data['idToken'] ?? '';
+    if (empty($idToken)) {
+        respond(false, 'Missing authentication token.');
     }
 
-    // Check if user exists
-    $stmt = $pdo->prepare("SELECT id, role, name, shop_address, qr_code_hash FROM users WHERE phone = ?");
-    $stmt->execute([$phone]);
+    // Verify token using Google Identity Toolkit REST API
+    $apiKey = getenv('FIREBASE_API_KEY');
+    if (empty($apiKey) || $apiKey === 'YOUR_FIREBASE_API_KEY') {
+        respond(false, 'Server missing Firebase Configuration.');
+    }
+
+    $url = "https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=" . $apiKey;
+    
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['idToken' => $idToken]));
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode !== 200 || !$response) {
+        respond(false, 'Invalid or expired Firebase token.');
+    }
+
+    $fbData = json_decode($response, true);
+    if (!isset($fbData['users'][0])) {
+        respond(false, 'Firebase Identity Verification failed.');
+    }
+
+    $fbUser = $fbData['users'][0];
+    $uid = $fbUser['localId'];
+    
+    // Some google accounts don't have phone numbers tied, so we fallback to parsing the payload or standardizing later
+    $phone = isset($fbUser['phoneNumber']) ?
+                str_replace('+', '', $fbUser['phoneNumber']) : // Strip + if present
+                filter_var($data['phone'] ?? '', FILTER_SANITIZE_STRING); // Fallback to provided payload
+                
+    $email = $fbUser['email'] ?? filter_var($data['email'] ?? '', FILTER_SANITIZE_EMAIL);
+    $name = $fbUser['displayName'] ?? filter_var($data['name'] ?? '', FILTER_SANITIZE_STRING);
+
+    if(empty($phone) && empty($email)) {
+         respond(false, 'Unable to extract phone or email to tie account. Please try again.');
+    }
+
+    // Check if user exists by UID first, then Phone, then Email
+    $stmt = $pdo->prepare("SELECT id, role, name, phone FROM users WHERE firebase_uid = ? OR phone = ? OR (email != '' AND email = ?) LIMIT 1");
+    $stmt->execute([$uid, $phone ?: 'NOPHONEMATCH', $email ?: 'NOEMAILMATCH']);
     $user = $stmt->fetch();
 
     $isNewUser = false;
 
     if (!$user) {
         // Create new Customer
-        $insert = $pdo->prepare("INSERT INTO users (phone, role) VALUES (?, 'customer')");
+        $insert = $pdo->prepare("INSERT INTO users (firebase_uid, phone, email, name, role) VALUES (?, ?, ?, ?, 'customer')");
         try {
-            $insert->execute([$phone]);
+            // Need to pass a dummy phone if google auth didn't provide one, requiring profile completion later
+            $insertPhone = $phone ?: ('GOOGLE_PENDING_' . substr($uid, 0, 5));
+            $insert->execute([$uid, $insertPhone, $email, $name]);
             $userId = $pdo->lastInsertId();
             $role = 'customer';
             $isNewUser = true;
 
             // Generate unique QR hash for the new user
-            $qrHash = hash('sha256', $userId . $phone . bin2hex(random_bytes(10)));
+            $qrHash = hash('sha256', $userId . $uid . bin2hex(random_bytes(10)));
             $pdo->prepare("UPDATE users SET qr_code_hash = ? WHERE id = ?")->execute([$qrHash, $userId]);
 
         } catch (\Exception $e) {
-            respond(false, 'Failed to create account. Please try again later.');
+            respond(false, 'Failed to create account. ' . $e->getMessage());
         }
     } else {
         $userId = $user['id'];
         $role = $user['role'];
+        $existingPhone = $user['phone'];
         
-        // Retroactively generate QR hash for old users if missing
-        if (empty($user['qr_code_hash']) && $role === 'customer') {
-            $qrHash = hash('sha256', $userId . $phone . bin2hex(random_bytes(10)));
-            $pdo->prepare("UPDATE users SET qr_code_hash = ? WHERE id = ?")->execute([$qrHash, $userId]);
+        // Update firebase_uid if missing (linking existing account to firebase)
+        $updateQuery = "UPDATE users SET firebase_uid = ?";
+        $updateParams = [$uid];
+        $needsUpdate = false;
+
+        if (empty($user['firebase_uid'])) {
+            $needsUpdate = true;
         }
+
+        // Retroactively generate QR hash if missing
+        if (empty($user['qr_code_hash']) && $role === 'customer') {
+            $updateQuery .= ", qr_code_hash = ?";
+            $qrHash = hash('sha256', $userId . $uid . bin2hex(random_bytes(10)));
+            $updateParams[] = $qrHash;
+            $needsUpdate = true;
+        }
+
+        if ($needsUpdate) {
+            $updateQuery .= " WHERE id = ?";
+            $updateParams[] = $userId;
+            $pdo->prepare($updateQuery)->execute($updateParams);
+        }
+        
+        $phone = $existingPhone; // Keep existing DB phone state
     }
 
-    // Set Sessions
+    // ---------------------------------
+    // SECURE SESSION CREATION
+    // ---------------------------------
+    session_regenerate_id(true); // Prevents session fixation
+    
     $_SESSION['user_id'] = $userId;
     $_SESSION['role'] = $role;
     $_SESSION['phone'] = $phone;
+    $_SESSION['firebase_uid'] = $uid;
 
-    // Determine redirect based on role
     $redirect = '';
     if ($role === 'admin') {
         $redirect = 'admin/dashboard.php';
     } elseif ($role === 'delivery') {
         $redirect = 'delivery/dashboard.php';
     } else {
-        // Customer
         $redirect = 'user/dashboard.php';
-        // If they are a new user or missing details, we might redirect them to a profile setup page later
-        // For now, straight to dashboard which will prompt them if needed
     }
 
     respond(true, 'Login successful!', ['redirect' => $redirect, 'is_new' => $isNewUser]);

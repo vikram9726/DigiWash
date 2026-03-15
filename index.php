@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once 'config.php';
+
 // If logged in, redirect
 if (isset($_SESSION['user_id'])) {
     if ($_SESSION['role'] === 'admin') header('Location: admin/dashboard.php');
@@ -14,6 +15,9 @@ if (isset($_SESSION['user_id'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DigiWash - Premium Laundry Service</title>
+    <!-- Firebase SDK (Compat version for simplicity) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
@@ -174,9 +178,7 @@ if (isset($_SESSION['user_id'])) {
                 <h1>Login / Sign up</h1>
                 <p class="subtext">Get your laundry sparkling clean today.</p>
 
-                <!-- Simulated Google Auth Button for Desktop -->
-                <!-- In a real app, this would use Google Identity Services SDK -->
-                <button class="google-btn" onclick="simulateGoogleLogin()">
+                <button class="google-btn" onclick="startGoogleLogin()">
                     <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" alt="Google">
                     Continue with Google
                 </button>
@@ -190,25 +192,24 @@ if (isset($_SESSION['user_id'])) {
                             <input type="tel" id="phone" name="phone" placeholder="Enter Mobile Number" required pattern="[0-9]{10}" title="Please enter a valid 10-digit number" style="flex: 1; border: none; padding: 1rem 1.2rem; font-size: 1.1rem; outline: none; background: transparent; min-width: 0;">
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-primary" id="loginBtn" style="padding: 1rem;">Continue <span class="material-icons-outlined" style="vertical-align: middle;">arrow_forward</span></button>
+                    <!-- Firebase Recaptcha Container -->
+                    <div id="recaptcha-container" style="margin-bottom: 1rem;"></div>
+                    
+                    <button type="submit" class="btn btn-primary" id="loginBtn" style="padding: 1rem;">Send OTP <span class="material-icons-outlined" style="vertical-align: middle;">arrow_forward</span></button>
                     <p id="errorMsg" style="color: var(--danger); margin-top: 1rem; display: none; font-weight: 600;"></p>
                 </form>
             </div>
 
-            <!-- Phone Collection Step (Post Google Login) -->
-            <div id="phoneStep">
-                <h1 style="font-size: 1.8rem;">Just one more step</h1>
-                <p class="subtext" style="font-size: 0.9rem;">We need your mobile number to coordinate deliveries.</p>
-                <form id="googlePhoneForm">
-                    <input type="hidden" id="g_email" value="">
-                    <input type="hidden" id="g_name" value="">
+            <!-- OTP Verification Step -->
+            <div id="otpStep" style="display: none;">
+                <h1 style="font-size: 1.8rem;">Verify Phone</h1>
+                <p class="subtext" style="font-size: 0.9rem;">Enter the 6-digit code sent via SMS.</p>
+                <form id="otpForm">
                     <div class="form-group" style="text-align: left;">
-                        <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 12px; background: rgba(255, 255, 255, 0.9); overflow: hidden; transition: border-color 0.3s ease;">
-                            <span style="padding: 1rem 1.2rem; background: #f8fafc; border-right: 2px solid #cbd5e1; font-weight: 700; color: #475569; font-size: 1.1rem;">+91</span>
-                            <input type="tel" id="g_phone" placeholder="Enter Mobile Number" required pattern="[0-9]{10}" style="flex: 1; border: none; padding: 1rem 1.2rem; font-size: 1.1rem; outline: none; background: transparent; min-width: 0;">
-                        </div>
+                        <input type="text" id="otpInput" placeholder="Enter 6-digit OTP" required pattern="[0-9]{6}" style="width: 100%; border: 2px solid #cbd5e1; border-radius: 12px; padding: 1rem 1.2rem; font-size: 1.1rem; outline: none; transition: border-color 0.3s ease;">
                     </div>
-                    <button type="submit" class="btn btn-success" id="linkPhoneBtn" style="padding: 1rem;">Complete Profile</button>
+                    <button type="submit" class="btn btn-success" id="verifyOtpBtn" style="padding: 1rem;">Verify & Login</button>
+                    <button type="button" class="btn" onclick="location.reload()" style="background:#e2e8f0; color:#475569; padding: 1rem; margin-top:0.5rem;">Cancel</button>
                 </form>
             </div>
 
@@ -227,55 +228,112 @@ if (isset($_SESSION['user_id'])) {
     </div>
 
     <script>
-        // Normal Phone Login
-        document.getElementById('phoneLoginForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const phone = document.getElementById('phone').value;
-            submitLogin(phone, null, null, document.getElementById('loginBtn'));
+        // Initialize Firebase Backend Variables (Passed from config.php)
+        const firebaseConfig = <?= getFirebaseConfigJs() ?>;
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        
+        // Setup Recaptcha
+        window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+            'size': 'invisible', // Can be 'normal' if you want it explicitly visible
+            'callback': (response) => {
+                // reCAPTCHA solved, allow signInWithPhoneNumber.
+            }
         });
 
-        // Simulating Google OAuth Flow mapping to our requirement
-        function simulateGoogleLogin() {
-            // In reality, Google OAuth opens a popup. We simulate the returned payload:
-            const mockGoogleResponse = {
-                email: "customer@example.com",
-                name: "John Google",
-                picture: "url..."
-                // NOTE: Google does NOT return phone numbers
-            };
-
-            // Switch UI to ask for Phone Number
-            document.getElementById('loginStep').style.display = 'none';
-            document.getElementById('phoneStep').style.display = 'block';
-            
-            // Store hidden data
-            document.getElementById('g_email').value = mockGoogleResponse.email;
-            document.getElementById('g_name').value = mockGoogleResponse.name;
+        const errorMsg = document.getElementById('errorMsg');
+        
+        function showError(text) {
+            if(errorMsg) {
+                errorMsg.innerText = text;
+                errorMsg.style.display = 'block';
+            } else {
+                alert(text);
+            }
         }
 
-        // Post-Google Phone submission
-        document.getElementById('googlePhoneForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const phone = document.getElementById('g_phone').value;
-            const email = document.getElementById('g_email').value;
-            const name = document.getElementById('g_name').value;
-            
-            submitLogin(phone, email, name, document.getElementById('linkPhoneBtn'));
-        });
+        let confirmationResult = null; // Stores Firebase response after sending SMS
 
-        async function submitLogin(phone, email, name, btnElement) {
+        // Phone Auth - Send OTP
+        document.getElementById('phoneLoginForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const phone = '+91' + document.getElementById('phone').value;
+            const btnElement = document.getElementById('loginBtn');
             const originalText = btnElement.innerHTML;
-            btnElement.innerHTML = 'Processing...';
-            btnElement.disabled = true;
             
-            const errorMsg = document.getElementById('errorMsg');
+            btnElement.innerHTML = 'Sending...';
+            btnElement.disabled = true;
             if(errorMsg) errorMsg.style.display = 'none';
 
+            auth.signInWithPhoneNumber(phone, window.recaptchaVerifier)
+                .then((result) => {
+                    // SMS sent
+                    confirmationResult = result;
+                    document.getElementById('loginStep').style.display = 'none';
+                    document.getElementById('otpStep').style.display = 'block';
+                }).catch((error) => {
+                    console.error("SMS Error", error);
+                    showError(error.message || "Failed to send SMS. Refresh and try again.");
+                    // Reset recaptcha on bad request
+                    window.recaptchaVerifier.render().then(function(widgetId) {
+                        grecaptcha.reset(widgetId);
+                    });
+                    btnElement.innerHTML = originalText;
+                    btnElement.disabled = false;
+                });
+        });
+
+        // Phone Auth - Verify OTP
+        document.getElementById('otpForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const otpCode = document.getElementById('otpInput').value;
+            const btnElement = document.getElementById('verifyOtpBtn');
+            
+            btnElement.innerHTML = 'Verifying...';
+            btnElement.disabled = true;
+
+            confirmationResult.confirm(otpCode).then((result) => {
+                // Success! User is signed in via Firebase.
+                // Now pass the token to backend.
+                result.user.getIdToken().then(idToken => {
+                    sendTokenToBackend(idToken, result.user.phoneNumber, null, null, btnElement);
+                });
+            }).catch((error) => {
+                showError("Invalid OTP code.");
+                btnElement.innerHTML = 'Verify & Login';
+                btnElement.disabled = false;
+            });
+        });
+
+        // Google SignIn
+        function startGoogleLogin() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            auth.signInWithPopup(provider).then((result) => {
+                const user = result.user;
+                user.getIdToken().then(idToken => {
+                    // Note: Google Auth might not return phone number, so we pass email/name.
+                    // The backend will handle linking or prompting profile completion in the dashboard.
+                    sendTokenToBackend(idToken, user.phoneNumber, user.email, user.displayName, document.querySelector('.google-btn'));
+                });
+            }).catch((error) => {
+                showError(error.message);
+            });
+        }
+
+        // Common Backend Call Step
+        async function sendTokenToBackend(idToken, phone, email, name, btnElement) {
+            btnElement.innerHTML = 'Authorizing...';
             try {
                 const response = await fetch('api/auth.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'login', phone: phone, email: email, name: name })
+                    body: JSON.stringify({ 
+                        action: 'firebase_login', 
+                        idToken: idToken,
+                        phone: phone, // Can be null for pure Google auth
+                        email: email, 
+                        name: name 
+                    })
                 });
 
                 const result = await response.json();
@@ -283,23 +341,14 @@ if (isset($_SESSION['user_id'])) {
                 if (result.success) {
                     window.location.href = result.redirect;
                 } else {
-                    if(errorMsg) {
-                        errorMsg.innerText = result.message || 'An error occurred';
-                        errorMsg.style.display = 'block';
-                    } else {
-                        alert(result.message);
-                    }
-                    btnElement.innerHTML = originalText;
+                    showError(result.message || 'An error occurred server-side');
+                    btnElement.innerHTML = 'Retry';
                     btnElement.disabled = false;
                 }
-
             } catch (error) {
                 console.error('Error:', error);
-                if(errorMsg) {
-                    errorMsg.innerText = 'Server error. Please try again.';
-                    errorMsg.style.display = 'block';
-                }
-                btnElement.innerHTML = originalText;
+                showError('Server error. Please try again.');
+                btnElement.innerHTML = 'Retry';
                 btnElement.disabled = false;
             }
         }

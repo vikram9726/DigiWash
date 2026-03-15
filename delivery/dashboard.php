@@ -151,6 +151,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'delivery') {
         </div>
     </div>
     <script>
+        const csrfToken = "<?= $_SESSION['csrf_token'] ?? '' ?>";
+
         document.addEventListener('DOMContentLoaded', () => {
             loadAssignments('pickups');
             loadAssignments('deliveries');
@@ -163,7 +165,11 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'delivery') {
             
             try {
                 const res = await fetch('../api/delivery.php', {
-                    method: 'POST', headers:{'Content-Type': 'application/json'},
+                    method: 'POST', 
+                    headers:{
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
                     body: JSON.stringify({ action: 'get_assignments', type: type })
                 });
                 const data = await res.json();
@@ -200,7 +206,11 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'delivery') {
             if(!confirm("Confirm you have collected the items from the shop?")) return;
             try {
                 const res = await fetch('../api/delivery.php', {
-                    method: 'POST', headers:{'Content-Type': 'application/json'},
+                    method: 'POST', 
+                    headers:{
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
                     body: JSON.stringify({ action: 'fulfill_pickup', order_id: orderId })
                 });
                 const data = await res.json();
@@ -270,7 +280,11 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'delivery') {
         async function submitQRHash(orderId, hash) {
             try {
                 const res = await fetch('../api/delivery.php', {
-                    method: 'POST', headers:{'Content-Type': 'application/json'},
+                    method: 'POST', 
+                    headers:{
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
                     body: JSON.stringify({ action: 'complete_delivery_qr', order_id: orderId, qr_hash: hash })
                 });
                 const data = await res.json();
@@ -314,7 +328,11 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'delivery') {
 
             try {
                 const res = await fetch('../api/delivery.php', {
-                    method: 'POST', headers:{'Content-Type': 'application/json'},
+                    method: 'POST', 
+                    headers:{
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
                     body: JSON.stringify({ action: 'complete_delivery_otp', order_id: orderId, otp: otp })
                 });
                 const data = await res.json();
@@ -351,6 +369,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'delivery') {
             try {
                 const res = await fetch('../api/delivery.php', {
                     method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfToken },
                     body: formData // No Content-Type header needed, fetch handles boundary for FormData
                 });
                 const data = await res.json();
@@ -378,7 +397,10 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'delivery') {
             e.preventDefault();
             await fetch('../api/auth.php', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
+                },
                 body: JSON.stringify({ action: 'logout' })
             });
             window.location.href = '../index.php';

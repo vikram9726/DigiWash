@@ -16,7 +16,14 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 }
 
 $data = json_decode(file_get_contents('php://input'), true);
-$action = $data['action'] ?? '';
+$action = $data['action'] ?? $_POST['action'] ?? '';
+
+// CSRF Protection Check
+$headers = getallheaders();
+$csrfToken = $headers['X-CSRF-Token'] ?? (is_array($data) ? ($data['csrf_token'] ?? '') : '') ?? $_POST['csrf_token'] ?? '';
+if (!hash_equals($_SESSION['csrf_token'], $csrfToken)) {
+    respond(false, 'Invalid CSRF token. Request denied.');
+}
 
 // --- FETCH DASHBOARD STATS ---
 if ($action === 'get_stats') {

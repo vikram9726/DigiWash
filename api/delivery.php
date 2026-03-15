@@ -23,8 +23,14 @@ if (!$data) {
 } else {
     $action = $data['action'] ?? '';
 }
-
 $deliveryId = $_SESSION['user_id'];
+
+// CSRF Protection Check
+$headers = getallheaders();
+$csrfToken = $headers['X-CSRF-Token'] ?? (is_array($data) ? ($data['csrf_token'] ?? '') : '') ?? $_POST['csrf_token'] ?? '';
+if (!hash_equals($_SESSION['csrf_token'], $csrfToken)) {
+    respond(false, 'Invalid CSRF token. Request denied.');
+}
 
 // --- FETCH ASSIGNMENTS ---
 if ($action === 'get_assignments') {

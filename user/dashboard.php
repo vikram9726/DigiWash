@@ -311,6 +311,8 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
 
     <script>
         // Tab Switching Logic
+        const csrfToken = "<?= $_SESSION['csrf_token'] ?? '' ?>";
+
         function switchTab(tabId) {
             // Update Sidebar UI
             document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
@@ -326,7 +328,10 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
             e.preventDefault();
             await fetch('../api/auth.php', {
                 method: 'POST',
-                headers:{ 'Content-Type': 'application/json' },
+                headers:{ 
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
+                },
                 body: JSON.stringify({ action: 'logout' })
             });
             window.location.href = '../index.php';
@@ -342,7 +347,11 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
         async function fetchStats() {
             try {
                 const res = await fetch('../api/orders.php', {
-                    method: 'POST', headers:{ 'Content-Type': 'application/json' },
+                    method: 'POST', 
+                    headers:{ 
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
                     body: JSON.stringify({ action: 'get_dashboard_stats' })
                 });
                 const data = await res.json();
@@ -367,7 +376,11 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
 
             try {
                 const res = await fetch('../api/orders.php', {
-                    method: 'POST', headers:{ 'Content-Type': 'application/json' },
+                    method: 'POST', 
+                    headers:{ 
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
                     body: JSON.stringify({ action: 'get_orders', type: type })
                 });
                 const data = await res.json();
@@ -399,7 +412,11 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
 
             try {
                 const res = await fetch('../api/orders.php', {
-                    method: 'POST', headers:{ 'Content-Type': 'application/json' },
+                    method: 'POST', 
+                    headers:{ 
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
                     body: JSON.stringify({ action: 'get_payments', type: type })
                 });
                 const data = await res.json();
@@ -434,7 +451,11 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
 
                 try {
                     const res = await fetch('../api/orders.php', {
-                        method: 'POST', headers:{ 'Content-Type': 'application/json' },
+                        method: 'POST', 
+                        headers:{ 
+                            'Content-Type': 'application/json',
+                            'X-CSRF-Token': csrfToken
+                        },
                         body: JSON.stringify({ action: 'create_order', weight: document.getElementById('orderWeight').value, instructions: document.getElementById('orderInstr').value })
                     });
                     const result = await res.json();
@@ -470,7 +491,7 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
             try {
                 const res = await fetch('../api/user.php', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
                     body: JSON.stringify({
                         action: 'update_profile',
                         name: document.getElementById('p_name').value,
@@ -531,7 +552,11 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
             formData.append('return_photo', photoFile);
 
             try {
-                const res = await fetch('../api/orders.php', { method: 'POST', body: formData });
+                const res = await fetch('../api/orders.php', { 
+                    method: 'POST',
+                    headers: { 'X-CSRF-Token': csrfToken }, // Fetch handles FormData boundary automatically
+                    body: formData 
+                });
                 const data = await res.json();
                 
                 if(data.success) {

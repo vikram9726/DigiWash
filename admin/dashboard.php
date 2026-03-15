@@ -132,6 +132,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     </div>
 
     <script>
+        const csrfToken = "<?= $_SESSION['csrf_token'] ?? '' ?>";
+
         function switchTab(tabId) {
             document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
             event.currentTarget.classList.add('active');
@@ -143,7 +145,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             e.preventDefault();
             await fetch('../api/auth.php', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
                 body: JSON.stringify({ action: 'logout' })
             });
             window.location.href = '../index.php';
@@ -158,7 +160,11 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
         async function apiCall(action, data = {}) {
             try {
                 const res = await fetch('../api/admin.php', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', 
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
                     body: JSON.stringify({ action, ...data })
                 });
                 return await res.json();
