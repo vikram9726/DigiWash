@@ -73,4 +73,18 @@ function getFirebaseConfigJs() {
         'appId' => getenv('FIREBASE_APP_ID') ?: ''
     ]);
 }
+
+// Helper to send Firebase Push Notifications (FCM v1)
+function sendPushNotification($pdo, $userId, $title, $body) {
+    if (!$pdo) return false;
+    $stmt = $pdo->prepare("SELECT fcm_token FROM users WHERE id = ?");
+    $stmt->execute([$userId]);
+    $token = $stmt->fetchColumn();
+
+    if (!$token) return false;
+
+    // This is a placeholder for the actual FCM V1 HTTP call.
+    error_log("FCM Push to User $userId: $title - $body");
+    return true;
+}
 ?>

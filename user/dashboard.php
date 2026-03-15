@@ -24,6 +24,7 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <style>
         .container {
             max-width: 1200px;
@@ -84,6 +85,65 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
             .menu-item { flex-shrink: 0; padding: 0.8rem 1rem; }
             .menu-item span { display: none; } /* Hide text on mobile nav, icons only */
             .menu-item i { margin-right: 0; }
+        }
+        /* Stepper Styles for Order Timeline */
+        .stepper {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 1.5rem 0;
+            position: relative;
+            padding: 0 10px;
+        }
+        .stepper::before {
+            content: '';
+            position: absolute;
+            top: 15px;
+            left: 20px;
+            right: 20px;
+            height: 2px;
+            background: #e2e8f0;
+            z-index: 1;
+        }
+        .step {
+            position: relative;
+            z-index: 2;
+            text-align: center;
+            background: white;
+            padding: 0 5px;
+        }
+        .step-circle {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 5px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            border: 2px solid white;
+        }
+        .step.active .step-circle {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+        }
+        .step.completed .step-circle {
+            background: #10b981;
+            color: white;
+        }
+        .step-label {
+            font-size: 10px;
+            color: #64748b;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .step.active .step-label {
+            color: var(--primary);
+            font-weight: 700;
         }
     </style>
 </head>
@@ -183,6 +243,14 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
                         <div class="form-group">
                             <label>Special Instructions (Optional)</label>
                             <textarea id="orderInstr" class="form-control" rows="3" placeholder="e.g. Please use fabric softener."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Coupon Code (Optional)</label>
+                            <div style="display:flex; gap:10px;">
+                                <input type="text" id="couponCode" class="form-control" placeholder="e.g. SAVE10">
+                                <button type="button" class="btn btn-outline" style="width:auto; padding:0.5rem 1rem;" id="applyCouponBtn">Apply</button>
+                            </div>
+                            <small id="couponFeedback" style="display:block; margin-top:5px; font-weight:600;"></small>
                         </div>
                         <button type="submit" class="btn btn-primary" id="submitOrderBtn">Request Pickup</button>
                         <p id="orderMsg" style="margin-top: 1rem; font-weight: 600; display: none;"></p>
@@ -337,12 +405,118 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
             window.location.href = '../index.php';
         });
 
+        async function initiatePayment(orderId, amount) {
+            try {
+                // 1. Create Order on our backend (which calls Razorpay)
+                const res = await fetch('../api/payments.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                    body: JSON.stringify({ action: 'create_rzp_order', order_id: orderId })
+                });
+                const data = await res.json();
+                
+                if (!data.success) {
+                    alert(data.message);
+                    return;
+                }
+
+                // 2. Open Razorpay Checkout
+                const options = {
+                    "key": data.key,
+                    "amount": data.amount,
+                    "currency": "INR",
+                    "name": "DigiWash",
+                    "description": "Laundry Service Payment",
+                    "order_id": data.rzp_order_id,
+                    "handler": async function (response) {
+                        // 3. Verify payment on our backend
+                        const verifyRes = await fetch('../api/payments.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                            body: JSON.stringify({
+                                action: 'verify_payment',
+                                razorpay_payment_id: response.razorpay_payment_id,
+                                razorpay_order_id: response.razorpay_order_id,
+                                razorpay_signature: response.razorpay_signature,
+                                local_order_id: orderId
+                            })
+                        });
+                        const verifyData = await verifyRes.json();
+                        alert(verifyData.message);
+                        if (verifyData.success) {
+                            window.location.reload();
+                        }
+                    },
+                    "prefill": {
+                        "name": "<?= htmlspecialchars($user['name'] ?? '') ?>",
+                        "email": "<?= htmlspecialchars($user['email'] ?? '') ?>",
+                        "contact": "<?= htmlspecialchars($user['phone'] ?? '') ?>"
+                    },
+                    "theme": { "color": "#4f46e5" }
+                };
+                const rzp = new Razorpay(options);
+                rzp.open();
+            } catch (e) {
+                console.error(e);
+                alert("Payment initiation failed. Please try again.");
+            }
+        }
+
         // Initialization and Data Loading
         document.addEventListener('DOMContentLoaded', () => {
             fetchStats();
-            loadHistories('ongoing');
+            loadOrders('ongoing');
+            loadOrders('completed');
             loadPayments('remaining');
+            loadPayments('completed');
+
+            // Initialize FCM if supported
+            if ('serviceWorker' in navigator && typeof firebase !== 'undefined') {
+                requestNotificationPermission();
+            }
         });
+
+        async function requestNotificationPermission() {
+            try {
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') {
+                    const messaging = firebase.messaging();
+                    // Note: Use your own VAPID Public Key here from Firebase Console
+                    const token = await messaging.getToken().catch(e => console.warn("Token fetch failed:", e));
+                    if (token) {
+                        saveFcmToken(token);
+                    }
+                }
+            } catch (err) {
+                console.warn('FCM Permission Error:', err);
+            }
+        }
+
+        async function saveFcmToken(token) {
+            await fetch('../api/user.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                body: JSON.stringify({ action: 'save_fcm_token', fcm_token: token })
+            });
+        }
+
+        // Coupon Validation
+        document.getElementById('applyCouponBtn')?.addEventListener('click', async () => {
+            const code = document.getElementById('couponCode').value;
+            const feedback = document.getElementById('couponFeedback');
+            if(!code) return;
+            
+            const res = await fetch('../api/orders.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                body: JSON.stringify({ action: 'validate_coupon', coupon_code: code })
+            });
+            const data = await res.json();
+            feedback.innerText = data.message;
+            feedback.style.color = data.success ? 'var(--secondary)' : 'var(--danger)';
+        });
+
+        // Create Order Submit Logic
 
         async function fetchStats() {
             try {
@@ -426,7 +600,7 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
                         <div style="border-bottom:1px solid #e2e8f0; padding:1rem 0;">
                             <strong>Order #${o.order_id}</strong> - <span style="color:${type === 'remaining' ? 'var(--danger)' : 'var(--secondary)'};">${type.toUpperCase()}</span>
                             <br><small>Amount: ₹${o.amount} | Due for Payment via: ${o.payment_mode}</small>
-                            ${type === 'remaining' ? `<br><button class="btn btn-primary" style="padding:0.3rem 0.8rem; font-size:0.8rem; width:auto; margin-top:0.5rem;">Pay Now</button>` : ''}
+                            ${type === 'remaining' ? `<br><button class="btn btn-primary" style="padding:0.3rem 0.8rem; font-size:0.8rem; width:auto; margin-top:0.5rem;" onclick="initiatePayment(${o.order_id}, ${o.amount})">Pay Now (Razorpay)</button>` : ''}
                         </div>
                     `).join('');
                 } else {
@@ -456,7 +630,12 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
                             'Content-Type': 'application/json',
                             'X-CSRF-Token': csrfToken
                         },
-                        body: JSON.stringify({ action: 'create_order', weight: document.getElementById('orderWeight').value, instructions: document.getElementById('orderInstr').value })
+                        body: JSON.stringify({ 
+                            action: 'create_order', 
+                            weight: document.getElementById('orderWeight').value, 
+                            instructions: document.getElementById('orderInstr').value,
+                            coupon_code: document.getElementById('couponCode').value 
+                        })
                     });
                     const result = await res.json();
                     

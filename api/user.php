@@ -48,4 +48,17 @@ if ($action === 'update_profile') {
     }
 }
 
+if ($action === 'save_fcm_token') {
+    $token = filter_var($data['fcm_token'] ?? '', FILTER_SANITIZE_STRING);
+    if (empty($token)) respond(false, 'Token missing.');
+
+    try {
+        $stmt = $pdo->prepare("UPDATE users SET fcm_token = ? WHERE id = ?");
+        $stmt->execute([$token, $userId]);
+        respond(true, 'Token saved.');
+    } catch (\Exception $e) {
+        respond(false, 'Failed to save token.');
+    }
+}
+
 respond(false, 'Invalid action specified in api/user.php');

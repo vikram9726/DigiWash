@@ -84,6 +84,12 @@ if ($action === 'fulfill_pickup') {
         $stmt->execute([$orderId, $deliveryId]);
         
         if ($stmt->rowCount() > 0) {
+            // Trigger Notification
+            $stmtUser = $pdo->prepare("SELECT user_id FROM orders WHERE id = ?");
+            $stmtUser->execute([$orderId]);
+            $ownerId = $stmtUser->fetchColumn();
+            sendPushNotification($pdo, $ownerId, "Clothes Picked Up", "Your clothes have been collected and are now in process!");
+            
             respond(true, 'Pickup marked as successfully collected & sent to processing.');
         } else {
             respond(false, 'Failed to update. Order might not be assigned to you or already picked up.');
@@ -123,8 +129,12 @@ if ($action === 'complete_delivery_otp') {
         $stmt = $pdo->prepare("UPDATE orders SET status = 'delivered', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$orderId]);
         
-        // The Payment remains 'remaining' until they pay via the app or COD is collected.
-        // If COD, we might assume delivery guy collects it.
+        // Trigger Notification
+        $stmtUser = $pdo->prepare("SELECT user_id FROM orders WHERE id = ?");
+        $stmtUser->execute([$orderId]);
+        $ownerId = $stmtUser->fetchColumn();
+        sendPushNotification($pdo, $ownerId, "Order Delivered", "Your laundry has been delivered. Thank you!");
+
         $pdo->commit();
         respond(true, 'Delivery completed successfully via OTP!');
     } catch (\Exception $e) {
@@ -192,20 +202,32 @@ if ($action === 'complete_delivery_bypass') {
         respond(false, 'Staff photo upload is required for bypass.');
     }
 
+    // 1. Enforce 5MB File Size Limit
+    if ($_FILES['staff_photo']['size'] > 5 * 1024 * 1024) {
+        respond(false, 'File size exceeds 5MB limit.');
+    }
+
     // Handle Upload
     $uploadDir = '../uploads/staff_photos/';
     if (!is_dir($uploadDir)) {
         mkdir($uploadDir, 0755, true);
     }
 
-    $fileExt = strtolower(pathinfo($_FILES['staff_photo']['name'], PATHINFO_EXTENSION));
-    $allowedExts = ['jpg', 'jpeg', 'png'];
+    // 2. Strict MIME Type Validation (Not just extension)
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $_FILES['staff_photo']['tmp_name']);
+    finfo_close($finfo);
 
-    if (!in_array($fileExt, $allowedExts)) {
-        respond(false, 'Invalid file type. Only JPG/PNG allowed.');
+    $allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+    if (!in_array($mimeType, $allowedMimeTypes)) {
+        respond(false, 'Invalid file content. Only JPG/PNG images are allowed.');
     }
+    
+    // Safely determine extension based on valid MIME
+    $fileExt = ($mimeType === 'image/png') ? 'png' : 'jpg';
 
-    $newFileName = 'bypass_' . $orderId . '_' . time() . '.' . $fileExt;
+    // 3. Generate Secure Unique Filename
+    $newFileName = 'bypass_' . $orderId . '_' . uniqid() . '.' . $fileExt;
     $destPath = $uploadDir . $newFileName;
 
     if (move_uploaded_file($_FILES['staff_photo']['tmp_name'], $destPath)) {

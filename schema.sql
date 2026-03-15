@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(100),
     alt_contact VARCHAR(15),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX (role)
 );
 
 -- Orders table
@@ -29,7 +30,10 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (delivery_id) REFERENCES users(id)
+    FOREIGN KEY (delivery_id) REFERENCES users(id),
+    INDEX (status),
+    INDEX (user_id),
+    INDEX (delivery_id)
 );
 
 -- Payments tracking table (Crucial for the 4-order delayed payment logic)
@@ -42,7 +46,8 @@ CREATE TABLE IF NOT EXISTS payments (
     amount DECIMAL(10, 2) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (order_id) REFERENCES orders(id)
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    INDEX (status)
 );
 
 -- Returns table

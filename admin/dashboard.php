@@ -13,6 +13,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     <title>DigiWash - Admin Panel</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         .container { max-width: 1400px; margin: 2rem auto; padding: 0 1rem; }
         .dashboard-grid { display: grid; grid-template-columns: 250px 1fr; gap: 2rem; }
@@ -74,6 +75,17 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
                     <div class="glass-panel stat-card"><h3>Active Orders</h3><div class="value" id="statOrders">0</div></div>
                     <div class="glass-panel stat-card"><h3>Total Users</h3><div class="value" id="statUsers">0</div></div>
                     <div class="glass-panel stat-card"><h3>Delivery Partners</h3><div class="value" id="statPartners">0</div></div>
+                </div>
+
+                <div class="dashboard-grid" style="grid-template-columns: 1fr 1fr; margin-top: 2rem;">
+                    <div class="glass-panel" style="padding: 1.5rem;">
+                        <h3 style="margin-bottom:1rem;">Revenue Trends (Last 6 Months)</h3>
+                        <canvas id="revenueChart"></canvas>
+                    </div>
+                    <div class="glass-panel" style="padding: 1.5rem;">
+                        <h3 style="margin-bottom:1rem;">Order Status Distribution</h3>
+                        <canvas id="distributionChart"></canvas>
+                    </div>
                 </div>
             </section>
 
@@ -155,7 +167,51 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             loadUsers();
             loadOrders();
             loadReturns();
+            loadAnalytics();
         });
+
+        async function loadAnalytics() {
+            const data = await apiCall('get_analytics');
+            if (data.success) {
+                renderRevenueChart(data.revenue);
+                renderDistributionChart(data.distribution);
+            }
+        }
+
+        function renderRevenueChart(revenueData) {
+            const ctx = document.getElementById('revenueChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: revenueData.map(d => d.month),
+                    datasets: [{
+                        label: 'Revenue (₹)',
+                        data: revenueData.map(d => d.total),
+                        borderColor: '#4f46e5',
+                        backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: { responsive: true, plugins: { legend: { display: false } } }
+            });
+        }
+
+        function renderDistributionChart(distData) {
+            const ctx = document.getElementById('distributionChart').getContext('2d');
+            const colors = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#8b5cf6'];
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: distData.map(d => d.status.toUpperCase()),
+                    datasets: [{
+                        data: distData.map(d => d.count),
+                        backgroundColor: colors.slice(0, distData.length)
+                    }]
+                },
+                options: { responsive: true, cutout: '70%' }
+            });
+        }
 
         async function apiCall(action, data = {}) {
             try {

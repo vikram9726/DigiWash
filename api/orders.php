@@ -80,24 +80,41 @@ if ($action === 'create_order') {
         // Note: In a full app, we might still allow them to create a strict COD order here.
     }
 
-    // 3. Create the Order
-    try {
-        $pdo->beginTransaction();
+        // 3. Create the Order
+        try {
+            $pdo->beginTransaction();
 
-        $pricePerKg = 50; // Example base rate
-        $totalAmount = $weight * $pricePerKg;
+            $pricePerKg = 50; 
+            $baseAmount = $weight * $pricePerKg;
+            $discount = 0;
+            $couponCode = filter_var($data['coupon_code'] ?? '', FILTER_SANITIZE_STRING);
 
-        $stmt = $pdo->prepare("INSERT INTO orders (user_id, status, total_amount, payment_status, cancellation_reason) VALUES (?, 'pending', ?, 'remaining', ?)");
-        $stmt->execute([$userId, $totalAmount, $instructions]);
-        $orderId = $pdo->lastInsertId();
+            if (!empty($couponCode)) {
+                $stmt = $pdo->prepare("SELECT * FROM coupons WHERE code = ? AND is_active = 1");
+                $stmt->execute([$couponCode]);
+                $coupon = $stmt->fetch();
+                if ($coupon) {
+                    if ($coupon['discount_type'] === 'percentage') {
+                        $discount = $baseAmount * ($coupon['discount_value'] / 100);
+                    } else {
+                        $discount = $coupon['discount_value'];
+                    }
+                }
+            }
 
-        // 4. Create the corresponding Payment record (Defaults to pending COD/Pay Later)
-        $stmt = $pdo->prepare("INSERT INTO payments (user_id, order_id, payment_mode, status, amount) VALUES (?, ?, 'COD', 'remaining', ?)");
-        $stmt->execute([$userId, $orderId, $totalAmount]);
+            $totalAmount = max(0, $baseAmount - $discount);
 
-        $pdo->commit();
-        respond(true, 'Order created successfully! Our delivery partner will be assigned shortly.');
-    } catch (\Exception $e) {
+            $stmt = $pdo->prepare("INSERT INTO orders (user_id, status, total_amount, payment_status, cancellation_reason) VALUES (?, 'pending', ?, 'remaining', ?)");
+            $stmt->execute([$userId, $totalAmount, $instructions]);
+            $orderId = $pdo->lastInsertId();
+
+            // 4. Create the corresponding Payment record
+            $stmt = $pdo->prepare("INSERT INTO payments (user_id, order_id, payment_mode, status, amount) VALUES (?, ?, 'COD', 'remaining', ?)");
+            $stmt->execute([$userId, $orderId, $totalAmount]);
+
+            $pdo->commit();
+            respond(true, 'Order created successfully! Our delivery partner will be assigned shortly.');
+        } catch (\Exception $e) {
         $pdo->rollBack();
         respond(false, 'Failed to create order. Error: ' . $e->getMessage());
     }
@@ -130,6 +147,25 @@ if ($action === 'get_payments') {
     respond(true, 'Payments fetched', ['payments' => $payments]);
 }
 
+// --- VALIDATE COUPON ---
+if ($action === 'validate_coupon') {
+    $code = filter_var($data['coupon_code'] ?? '', FILTER_SANITIZE_STRING);
+    if (empty($code)) respond(false, 'Coupon code is required.');
+
+    $stmt = $pdo->prepare("SELECT * FROM coupons WHERE code = ? AND is_active = 1");
+    $stmt->execute([$code]);
+    $coupon = $stmt->fetch();
+
+    if (!$coupon) {
+        respond(false, 'Invalid or expired coupon code.');
+    }
+
+    respond(true, 'Coupon applied!', [
+        'discount_type' => $coupon['discount_type'],
+        'discount_value' => $coupon['discount_value']
+    ]);
+}
+
 // --- SUBMIT RETURN REQUEST ---
 if ($action === 'request_return') {
     $orderId = $_POST['order_id'] ?? 0;
@@ -152,13 +188,29 @@ if ($action === 'request_return') {
         respond(false, 'A clear photo of the issue is required for a return request.');
     }
 
+    // 1. File Size Limit (5MB)
+    if ($_FILES['return_photo']['size'] > 5 * 1024 * 1024) {
+        respond(false, 'File size exceeds 5MB limit.');
+    }
+
     $uploadDir = '../uploads/returns/';
     if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
 
-    $fileExt = strtolower(pathinfo($_FILES['return_photo']['name'], PATHINFO_EXTENSION));
-    if (!in_array($fileExt, ['jpg', 'jpeg', 'png'])) respond(false, 'Only JPG/PNG images allowed.');
+    // 2. Strict MIME Type Validation using finfo (Not just string extension)
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $_FILES['return_photo']['tmp_name']);
+    finfo_close($finfo);
 
-    $newFileName = 'return_' . $orderId . '_' . time() . '.' . $fileExt;
+    $allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+    if (!in_array($mimeType, $allowedMimeTypes)) {
+        respond(false, 'Invalid file content. Only JPG/PNG images are allowed.');
+    }
+
+    // Determine extension safely
+    $fileExt = ($mimeType === 'image/png') ? 'png' : 'jpg';
+    
+    // 3. Secure Filename Generation
+    $newFileName = 'return_' . $orderId . '_' . uniqid() . '.' . $fileExt;
     
     if (move_uploaded_file($_FILES['return_photo']['tmp_name'], $uploadDir . $newFileName)) {
         $photoUrl = 'uploads/returns/' . $newFileName;

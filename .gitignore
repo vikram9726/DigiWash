@@ -1,0 +1,8 @@
+.env
+*.json
+!firebase-messaging-sw.js
+vendor/
+node_modules/
+.DS_Store
+*.log
+tmp/

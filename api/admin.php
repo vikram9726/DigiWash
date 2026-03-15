@@ -88,6 +88,17 @@ if ($action === 'assign_order') {
     try {
         $stmt = $pdo->prepare("UPDATE orders SET delivery_id = ?, updated_at = NOW() WHERE id = ?");
         $stmt->execute([$deliveryId, $orderId]);
+
+        // Trigger Notifications
+        // 1. Notify Customer
+        $stmtUser = $pdo->prepare("SELECT user_id FROM orders WHERE id = ?");
+        $stmtUser->execute([$orderId]);
+        $ownerId = $stmtUser->fetchColumn();
+        sendPushNotification($pdo, $ownerId, "Driver Assigned", "A delivery partner has been assigned to your order!");
+
+        // 2. Notify Driver
+        sendPushNotification($pdo, $deliveryId, "New Task Assigned", "A new delivery task #$orderId is assigned to you.");
+
         respond(true, 'Order assigned to delivery partner successfully.');
     } catch (\Exception $e) {
         respond(false, 'Database Error: ' . $e->getMessage());
@@ -163,6 +174,28 @@ if ($action === 'send_notification') {
     // In a real system, you'd insert these into a `notifications` table or call Firebase Cloud Messaging (FCM).
     // For this prototype, we'll pretend it fired to all devices successfully.
     respond(true, 'Push Notification sent to all users successfully!');
+}
+
+// --- GET ANALYTICS ---
+if ($action === 'get_analytics') {
+    // 1. Monthly Revenue (Last 6 months)
+    $stmt = $pdo->query("
+        SELECT DATE_FORMAT(created_at, '%b %Y') as month, SUM(amount) as total 
+        FROM payments 
+        WHERE status = 'completed' 
+        GROUP BY month 
+        ORDER BY MIN(created_at) DESC LIMIT 6
+    ");
+    $revenueData = array_reverse($stmt->fetchAll());
+
+    // 2. Order Status Distribution
+    $stmt = $pdo->query("SELECT status, COUNT(*) as count FROM orders GROUP BY status");
+    $distribution = $stmt->fetchAll();
+
+    respond(true, 'Analytics fetched', [
+        'revenue' => $revenueData,
+        'distribution' => $distribution
+    ]);
 }
 
 respond(false, 'Invalid action specified in api/admin.php');
