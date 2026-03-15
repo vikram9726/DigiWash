@@ -60,7 +60,7 @@ if ($action === 'create_order') {
     }
 
     // 1. Check if user needs profile setup
-    $stmt = $pdo->prepare("SELECT name, shop_address FROM users WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT name, shop_address FROM customers WHERE id = ?");
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
     

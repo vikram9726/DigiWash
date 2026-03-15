@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'delivery') {
-    respond(false, 'Unauthorized. Delivery partner access only.');
+    respond(false, 'Unauthorized. Delivery access only.');
 }
 
 $data = json_decode(file_get_contents('php://input'), true);
@@ -41,7 +41,7 @@ if ($action === 'get_assignments') {
         $stmt = $pdo->prepare("
             SELECT o.*, u.name as customer_name, u.shop_address, u.phone 
             FROM orders o 
-            JOIN users u ON o.user_id = u.id 
+            JOIN customers u ON o.user_id = u.id 
             WHERE o.delivery_id = ? AND o.status = 'pending'
             ORDER BY o.created_at ASC
         ");
@@ -50,18 +50,18 @@ if ($action === 'get_assignments') {
         $stmt = $pdo->prepare("
             SELECT o.*, u.name as customer_name, u.shop_address, u.phone 
             FROM orders o 
-            JOIN users u ON o.user_id = u.id 
+            JOIN customers u ON o.user_id = u.id 
             WHERE o.delivery_id = ? AND o.status = 'out_for_delivery'
             ORDER BY o.updated_at ASC
         ");
     } elseif ($type === 'completed') {
         // Delivered orders by this partner
         $stmt = $pdo->prepare("
-            SELECT o.*, u.name as customer_name, u.shop_address 
+            SELECT o.*, u.name as customer_name, u.phone as customer_phone, u.shop_address 
             FROM orders o 
-            JOIN users u ON o.user_id = u.id 
-            WHERE o.delivery_id = ? AND o.status = 'delivered'
-            ORDER BY o.updated_at DESC LIMIT 50
+            JOIN customers u ON o.user_id = u.id 
+            WHERE o.delivery_id = ? AND o.status NOT IN ('delivered', 'cancelled')
+            ORDER BY o.created_at DESC
         ");
     } else {
         respond(false, 'Invalid assignment type.');

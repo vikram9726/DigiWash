@@ -76,60 +76,56 @@ if ($action === 'firebase_login') {
          respond(false, 'Unable to extract phone or email to tie account. Please try again.');
     }
 
-    // Check if user exists by UID first, then Phone, then Email
-    $stmt = $pdo->prepare("SELECT id, role, name, phone FROM users WHERE firebase_uid = ? OR phone = ? OR (email != '' AND email = ?) LIMIT 1");
-    $stmt->execute([$uid, $phone ?: 'NOPHONEMATCH', $email ?: 'NOEMAILMATCH']);
+    // Check if user exists as Customer, Admin, or Delivery Partner
+    $user = null;
+    $role = 'customer';
+
+    // 1. Check Customers
+    $stmt = $pdo->prepare("SELECT id, 'customer' as role, name, phone, firebase_uid FROM customers WHERE firebase_uid = ? OR phone = ? LIMIT 1");
+    $stmt->execute([$uid, $phone ?: 'NOPHONEMATCH']);
     $user = $stmt->fetch();
+
+    if (!$user) {
+        // 2. Check Admins
+        $stmt = $pdo->prepare("SELECT id, 'admin' as role, name, phone, firebase_uid FROM admins WHERE firebase_uid = ? OR phone = ? LIMIT 1");
+        $stmt->execute([$uid, $phone ?: 'NOPHONEMATCH']);
+        $user = $stmt->fetch();
+    }
+
+    if (!$user) {
+        // 3. Check Delivery Partners
+        $stmt = $pdo->prepare("SELECT id, 'delivery' as role, name, phone, firebase_uid FROM delivery_partners WHERE firebase_uid = ? OR phone = ? LIMIT 1");
+        $stmt->execute([$uid, $phone ?: 'NOPHONEMATCH']);
+        $user = $stmt->fetch();
+    }
 
     $isNewUser = false;
 
     if (!$user) {
-        // Create new Customer
-        $insert = $pdo->prepare("INSERT INTO users (firebase_uid, phone, email, name, role) VALUES (?, ?, ?, ?, 'customer')");
+        // Create new Customer by default if not found anywhere else
+        $insert = $pdo->prepare("INSERT INTO customers (firebase_uid, phone, email, name) VALUES (?, ?, ?, ?)");
         try {
-            // Need to pass a dummy phone if google auth didn't provide one, requiring profile completion later
             $insertPhone = $phone ?: ('GOOGLE_PENDING_' . substr($uid, 0, 5));
             $insert->execute([$uid, $insertPhone, $email, $name]);
             $userId = $pdo->lastInsertId();
             $role = 'customer';
             $isNewUser = true;
 
-            // Generate unique QR hash for the new user
             $qrHash = hash('sha256', $userId . $uid . bin2hex(random_bytes(10)));
-            $pdo->prepare("UPDATE users SET qr_code_hash = ? WHERE id = ?")->execute([$qrHash, $userId]);
-
+            $pdo->prepare("UPDATE customers SET qr_code_hash = ? WHERE id = ?")->execute([$qrHash, $userId]);
         } catch (\Exception $e) {
             respond(false, 'Failed to create account. ' . $e->getMessage());
         }
     } else {
         $userId = $user['id'];
         $role = $user['role'];
-        $existingPhone = $user['phone'];
         
-        // Update firebase_uid if missing (linking existing account to firebase)
-        $updateQuery = "UPDATE users SET firebase_uid = ?";
-        $updateParams = [$uid];
-        $needsUpdate = false;
-
+        // Update firebase_uid if missing
         if (empty($user['firebase_uid'])) {
-            $needsUpdate = true;
+            $tableName = ($role === 'admin') ? 'admins' : (($role === 'delivery') ? 'delivery_partners' : 'customers');
+            $pdo->prepare("UPDATE $tableName SET firebase_uid = ? WHERE id = ?")->execute([$uid, $userId]);
         }
-
-        // Retroactively generate QR hash if missing
-        if (empty($user['qr_code_hash']) && $role === 'customer') {
-            $updateQuery .= ", qr_code_hash = ?";
-            $qrHash = hash('sha256', $userId . $uid . bin2hex(random_bytes(10)));
-            $updateParams[] = $qrHash;
-            $needsUpdate = true;
-        }
-
-        if ($needsUpdate) {
-            $updateQuery .= " WHERE id = ?";
-            $updateParams[] = $userId;
-            $pdo->prepare($updateQuery)->execute($updateParams);
-        }
-        
-        $phone = $existingPhone; // Keep existing DB phone state
+        $phone = $user['phone'];
     }
 
     // ---------------------------------
@@ -152,6 +148,42 @@ if ($action === 'firebase_login') {
     }
 
     respond(true, 'Login successful!', ['redirect' => $redirect, 'is_new' => $isNewUser]);
+}
+
+if ($action === 'dummy_login') {
+    $phone = filter_var($data['phone'] ?? '', FILTER_SANITIZE_STRING);
+    $otp = filter_var($data['otp'] ?? '', FILTER_SANITIZE_STRING);
+
+    if (empty($phone) || empty($otp)) {
+        respond(false, 'Phone and OTP are required.');
+    }
+
+    $user = null;
+    $role = '';
+
+    // Check Admin
+    $stmt = $pdo->prepare("SELECT id, 'admin' as role, phone FROM admins WHERE phone = ? AND dummy_otp = ? LIMIT 1");
+    $stmt->execute([$phone, $otp]);
+    $user = $stmt->fetch();
+
+    if (!$user) {
+        // Check Delivery
+        $stmt = $pdo->prepare("SELECT id, 'delivery' as role, phone FROM delivery_partners WHERE phone = ? AND dummy_otp = ? LIMIT 1");
+        $stmt->execute([$phone, $otp]);
+        $user = $stmt->fetch();
+    }
+
+    if (!$user) {
+        respond(false, 'Invalid Phone or Dummy OTP.');
+    }
+
+    session_regenerate_id(true);
+    $_SESSION['user_id'] = $user['id'];
+    $_SESSION['role'] = $user['role'];
+    $_SESSION['phone'] = $user['phone'];
+
+    $redirect = ($user['role'] === 'admin') ? 'admin/dashboard.php' : 'delivery/dashboard.php';
+    respond(true, 'Login successful!', ['redirect' => $redirect]);
 }
 
 if ($action === 'logout') {

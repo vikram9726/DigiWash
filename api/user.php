@@ -11,8 +11,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     respond(false, 'Invalid request method.');
 }
 
-if (!isset($_SESSION['user_id'])) {
-    respond(false, 'Unauthorized. Please log in.');
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'customer') {
+    respond(false, 'Unauthorized');
 }
 
 $data = json_decode(file_get_contents('php://input'), true);
@@ -36,10 +36,19 @@ if ($action === 'update_profile') {
         respond(false, 'Name and Shop Address are required.');
     }
 
+    // Orders with Customer info
+    $stmt = $pdo->prepare("SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC");
+    $stmt->execute([$userId]);
+    $orders = $stmt->fetchAll();
+
+    // Latest Profile Info from customers table
+    $stmt = $pdo->prepare("SELECT name, phone, email, shop_address, qr_code_hash FROM customers WHERE id = ?");
+    $stmt->execute([$userId]);
+    $user = $stmt->fetch();
     // Check if the user is allowed to edit address (No ongoing payments logic - simplified here)
     // We update the data
     try {
-        $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, shop_address = ?, alt_contact = ? WHERE id = ?");
+        $stmt = $pdo->prepare("UPDATE customers SET name = ?, email = ?, shop_address = ?, alt_contact = ? WHERE id = ?");
         $stmt->execute([$name, $email, $shopAddress, $altContact, $userId]);
         
         respond(true, 'Profile updated successfully!');
@@ -49,13 +58,13 @@ if ($action === 'update_profile') {
 }
 
 if ($action === 'save_fcm_token') {
-    $token = filter_var($data['fcm_token'] ?? '', FILTER_SANITIZE_STRING);
-    if (empty($token)) respond(false, 'Token missing.');
+    $token = $data['fcm_token'] ?? '';
+    if (empty($token)) respond(false, 'Token missing');
 
     try {
-        $stmt = $pdo->prepare("UPDATE users SET fcm_token = ? WHERE id = ?");
+        $stmt = $pdo->prepare("UPDATE customers SET fcm_token = ? WHERE id = ?");
         $stmt->execute([$token, $userId]);
-        respond(true, 'Token saved.');
+        respond(true, 'Token saved');
     } catch (\Exception $e) {
         respond(false, 'Failed to save token.');
     }

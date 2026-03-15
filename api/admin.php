@@ -27,8 +27,8 @@ if (!hash_equals($_SESSION['csrf_token'], $csrfToken)) {
 
 // --- FETCH DASHBOARD STATS ---
 if ($action === 'get_stats') {
-    // Total Users
-    $stmt = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'customer'");
+    // Total Users (Customers)
+    $stmt = $pdo->query("SELECT COUNT(*) FROM customers");
     $totalUsers = $stmt->fetchColumn();
 
     // Active Orders (Not Delivered/Cancelled)
@@ -40,7 +40,7 @@ if ($action === 'get_stats') {
     $pendingRevenue = $stmt->fetchColumn() ?: 0;
 
     // Delivery Partners
-    $stmt = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'delivery'");
+    $stmt = $pdo->query("SELECT COUNT(*) FROM delivery_partners");
     $deliveryPartners = $stmt->fetchColumn();
 
     respond(true, 'Stats fetched', [
@@ -53,7 +53,7 @@ if ($action === 'get_stats') {
 
 // --- FETCH USERS ---
 if ($action === 'get_users') {
-    $stmt = $pdo->query("SELECT id, name, phone, email, shop_address, created_at FROM users WHERE role = 'customer' ORDER BY created_at DESC");
+    $stmt = $pdo->query("SELECT id, name, phone, email, shop_address, created_at FROM customers ORDER BY created_at DESC");
     $users = $stmt->fetchAll();
     respond(true, 'Users fetched', ['users' => $users]);
 }
@@ -63,14 +63,14 @@ if ($action === 'get_all_orders') {
     $stmt = $pdo->query("
         SELECT o.*, u.name as customer_name, d.name as delivery_name 
         FROM orders o 
-        JOIN users u ON o.user_id = u.id 
-        LEFT JOIN users d ON o.delivery_id = d.id 
+        JOIN customers u ON o.user_id = u.id 
+        LEFT JOIN delivery_partners d ON o.delivery_id = d.id 
         ORDER BY o.created_at DESC LIMIT 100
     ");
     $orders = $stmt->fetchAll();
     
     // Also fetch available delivery partners for the assignment dropdown
-    $stmt = $pdo->query("SELECT id, name FROM users WHERE role = 'delivery'");
+    $stmt = $pdo->query("SELECT id, name FROM delivery_partners");
     $partners = $stmt->fetchAll();
 
     respond(true, 'Orders fetched', ['orders' => $orders, 'delivery_partners' => $partners]);
@@ -134,7 +134,7 @@ if ($action === 'get_returns') {
         SELECT r.*, o.total_amount, u.name as customer_name, u.phone 
         FROM returns r
         JOIN orders o ON r.order_id = o.id
-        JOIN users u ON o.user_id = u.id
+        JOIN customers u ON o.user_id = u.id
         ORDER BY r.created_at DESC
     ");
     $returns = $stmt->fetchAll();
@@ -157,6 +157,32 @@ if ($action === 'handle_return') {
         // Note: If approved, you might generate a refund payment log or queue a pickup. Let's keep it simple.
         
         respond(true, 'Return request ' . $status . ' successfully.');
+    } catch (\Exception $e) {
+        respond(false, 'Database Error: ' . $e->getMessage());
+    }
+}
+
+// --- FETCH PARTNERS ---
+if ($action === 'get_partners') {
+    $stmt = $pdo->query("SELECT id, name, phone, dummy_otp, created_at FROM delivery_partners ORDER BY created_at DESC");
+    $partners = $stmt->fetchAll();
+    respond(true, 'Partners fetched', ['partners' => $partners]);
+}
+
+// --- CREATE DELIVERY PARTNER ---
+if ($action === 'create_delivery_partner') {
+    $name = filter_var($data['name'] ?? '', FILTER_SANITIZE_STRING);
+    $phone = filter_var($data['phone'] ?? '', FILTER_SANITIZE_STRING);
+    $otp = filter_var($data['otp'] ?? '', FILTER_SANITIZE_STRING);
+
+    if (empty($name) || empty($phone) || empty($otp)) {
+        respond(false, 'Name, Phone, and Dummy OTP are required.');
+    }
+
+    try {
+        $stmt = $pdo->prepare("INSERT INTO delivery_partners (name, phone, dummy_otp) VALUES (?, ?, ?)");
+        $stmt->execute([$name, $phone, $otp]);
+        respond(true, 'Delivery partner created successfully.');
     } catch (\Exception $e) {
         respond(false, 'Database Error: ' . $e->getMessage());
     }

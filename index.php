@@ -197,6 +197,26 @@ if (isset($_SESSION['user_id'])) {
                     
                     <button type="submit" class="btn btn-primary" id="loginBtn" style="padding: 1rem;">Send OTP <span class="material-icons-outlined" style="vertical-align: middle;">arrow_forward</span></button>
                     <p id="errorMsg" style="color: var(--danger); margin-top: 1rem; display: none; font-weight: 600;"></p>
+                    <div style="margin-top: 1.5rem; text-align: center;">
+                        <a href="javascript:void(0)" onclick="toggleStaffLogin()" id="staffToggleLink" style="color: var(--primary); font-weight: 600; font-size: 0.9rem;">Staff / Delivery Login</a>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Staff/Dummy Login Step -->
+            <div id="staffStep" style="display: none;">
+                <h1>Staff Login</h1>
+                <p class="subtext">Use your assigned dummy OTP to access.</p>
+                <form id="staffLoginForm">
+                    <div class="form-group">
+                        <input type="tel" id="staffPhone" placeholder="Enter Phone (e.g. 919876543210)" required class="form-control" style="border: 2px solid #cbd5e1; border-radius:12px; padding:1rem;">
+                    </div>
+                    <div class="form-group">
+                        <input type="text" id="staffOtp" placeholder="Enter Dummy OTP" required class="form-control" style="border: 2px solid #cbd5e1; border-radius:12px; padding:1rem;">
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="padding: 1rem;">Verify & Enter</button>
+                    <button type="button" class="btn" onclick="toggleStaffLogin()" style="background:#e2e8f0; color:#475569; padding: 1rem; margin-top:0.5rem; width:100%;">Back to Customer Login</button>
+                    <p id="staffError" style="color: var(--danger); margin-top: 1rem; display: none; font-weight: 600;"></p>
                 </form>
             </div>
 
@@ -352,6 +372,51 @@ if (isset($_SESSION['user_id'])) {
                 btnElement.disabled = false;
             }
         }
+
+        // Staff Login Toggle
+        function toggleStaffLogin() {
+            const loginStep = document.getElementById('loginStep');
+            const staffStep = document.getElementById('staffStep');
+            if (staffStep.style.display === 'none') {
+                loginStep.style.display = 'none';
+                staffStep.style.display = 'block';
+            } else {
+                loginStep.style.display = 'block';
+                staffStep.style.display = 'none';
+            }
+        }
+
+        document.getElementById('staffLoginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button[type="submit"]');
+            const err = document.getElementById('staffError');
+            btn.innerHTML = 'Verifying...'; btn.disabled = true;
+            err.style.display = 'none';
+
+            try {
+                const res = await fetch('api/auth.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'dummy_login',
+                        phone: document.getElementById('staffPhone').value,
+                        otp: document.getElementById('staffOtp').value
+                    })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    window.location.href = result.redirect;
+                } else {
+                    err.innerText = result.message;
+                    err.style.display = 'block';
+                    btn.innerHTML = 'Verify & Enter'; btn.disabled = false;
+                }
+            } catch (e) {
+                err.innerText = 'Server connection failed.';
+                err.style.display = 'block';
+                btn.innerHTML = 'Verify & Enter'; btn.disabled = false;
+            }
+        });
     </script>
 </body>
 </html>

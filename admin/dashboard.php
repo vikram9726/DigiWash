@@ -62,6 +62,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             <div class="menu-item active" onclick="switchTab('overview')"><i class="material-icons-outlined">insights</i><span>Overview</span></div>
             <div class="menu-item" onclick="switchTab('users')"><i class="material-icons-outlined">people</i><span>Users & Delivery</span></div>
             <div class="menu-item" onclick="switchTab('orders')"><i class="material-icons-outlined">assignment</i><span>Manage Orders</span></div>
+            <div class="menu-item" onclick="switchTab('partners')"><i class="material-icons-outlined">local_shipping</i><span>Delivery Partners</span></div>
             <div class="menu-item" onclick="switchTab('returns')"><i class="material-icons-outlined">assignment_return</i><span>Return Requests</span></div>
             <div class="menu-item" onclick="switchTab('marketing')"><i class="material-icons-outlined">campaign</i><span>Marketing & Coupons</span></div>
         </aside>
@@ -122,6 +123,20 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
                 </div>
             </section>
 
+            <!-- Delivery Partners Section -->
+            <section id="partners" class="section-content">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+                    <h2>Delivery Partners</h2>
+                    <button class="btn btn-primary" style="width:auto;" onclick="document.getElementById('partnerModal').style.display='flex'">Add Partner</button>
+                </div>
+                <div class="glass-panel" style="overflow-x: auto;">
+                    <table>
+                        <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Dummy OTP</th><th>Date Joined</th></tr></thead>
+                        <tbody id="partnersTableBody"><tr><td colspan="5" style="text-align:center;">Loading...</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+
             <!-- Marketing Section -->
             <section id="marketing" class="section-content">
                 <h2>Push Notifications & Coupons</h2>
@@ -143,6 +158,32 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
         </main>
     </div>
 
+    <!-- Add Partner Modal -->
+    <div id="partnerModal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+        <div class="glass-panel" style="width:400px; padding:2rem;">
+            <h3>Add Delivery Partner</h3>
+            <form id="partnerForm" style="margin-top:1rem;">
+                <div class="form-group">
+                    <label>Full Name</label>
+                    <input type="text" id="partnerName" class="form-control" required placeholder="e.g. John Doe">
+                </div>
+                <div class="form-group">
+                    <label>Phone Number (with 91)</label>
+                    <input type="text" id="partnerPhone" class="form-control" required placeholder="e.g. 919876543210">
+                </div>
+                <div class="form-group">
+                    <label>Dummy OTP for Testing</label>
+                    <input type="text" id="partnerOtp" class="form-control" required placeholder="e.g. 123456" maxlength="6">
+                </div>
+                <div style="display:flex; gap:10px; margin-top:1.5rem;">
+                    <button type="submit" class="btn btn-success">Save Partner</button>
+                    <button type="button" class="btn btn-outline" onclick="document.getElementById('partnerModal').style.display='none'">Cancel</button>
+                </div>
+            </form>
+            <p id="partnerMsg" style="margin-top:1rem; font-weight:600; display:none;"></p>
+        </div>
+    </div>
+    
     <script>
         const csrfToken = "<?= $_SESSION['csrf_token'] ?? '' ?>";
 
@@ -166,6 +207,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             loadStats();
             loadUsers();
             loadOrders();
+            loadPartners();
             loadReturns();
             loadAnalytics();
         });
@@ -212,6 +254,52 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
                 options: { responsive: true, cutout: '70%' }
             });
         }
+
+        async function loadPartners() {
+            const tbody = document.getElementById('partnersTableBody');
+            const data = await apiCall('get_partners');
+            if (data.success && data.partners.length > 0) {
+                tbody.innerHTML = data.partners.map(p => `
+                    <tr>
+                        <td>#${p.id}</td>
+                        <td>${p.name}</td>
+                        <td>${p.phone}</td>
+                        <td><code>${p.dummy_otp || 'N/A'}</code></td>
+                        <td>${new Date(p.created_at).toLocaleDateString()}</td>
+                    </tr>
+                `).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No delivery partners found.</td></tr>';
+            }
+        }
+
+        document.getElementById('partnerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button[type="submit"]');
+            const msg = document.getElementById('partnerMsg');
+            btn.innerHTML = 'Saving...'; btn.disabled = true;
+
+            const res = await apiCall('create_delivery_partner', {
+                name: document.getElementById('partnerName').value,
+                phone: document.getElementById('partnerPhone').value,
+                otp: document.getElementById('partnerOtp').value
+            });
+
+            msg.innerText = res.message;
+            msg.style.display = 'block';
+            msg.style.color = res.success ? 'var(--secondary)' : 'var(--danger)';
+            btn.innerHTML = 'Save Partner'; btn.disabled = false;
+
+            if(res.success) {
+                setTimeout(() => {
+                    document.getElementById('partnerModal').style.display = 'none';
+                    msg.style.display = 'none';
+                    e.target.reset();
+                    loadPartners();
+                    loadStats();
+                }, 1500);
+            }
+        });
 
         async function apiCall(action, data = {}) {
             try {
