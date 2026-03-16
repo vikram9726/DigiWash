@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS users (
     shop_address TEXT,
     email VARCHAR(100),
     alt_contact VARCHAR(15),
+    fcm_token TEXT,
+    qr_code_hash VARCHAR(128),
+    dummy_otp VARCHAR(6),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX (role)

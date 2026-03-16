@@ -41,7 +41,7 @@ if ($action === 'get_assignments') {
         $stmt = $pdo->prepare("
             SELECT o.*, u.name as customer_name, u.shop_address, u.phone 
             FROM orders o 
-            JOIN customers u ON o.user_id = u.id 
+            JOIN users u ON o.user_id = u.id 
             WHERE o.delivery_id = ? AND o.status = 'pending'
             ORDER BY o.created_at ASC
         ");
@@ -50,7 +50,7 @@ if ($action === 'get_assignments') {
         $stmt = $pdo->prepare("
             SELECT o.*, u.name as customer_name, u.shop_address, u.phone 
             FROM orders o 
-            JOIN customers u ON o.user_id = u.id 
+            JOIN users u ON o.user_id = u.id 
             WHERE o.delivery_id = ? AND o.status = 'out_for_delivery'
             ORDER BY o.updated_at ASC
         ");
@@ -59,7 +59,7 @@ if ($action === 'get_assignments') {
         $stmt = $pdo->prepare("
             SELECT o.*, u.name as customer_name, u.phone as customer_phone, u.shop_address 
             FROM orders o 
-            JOIN customers u ON o.user_id = u.id 
+            JOIN users u ON o.user_id = u.id 
             WHERE o.delivery_id = ? AND o.status NOT IN ('delivered', 'cancelled')
             ORDER BY o.created_at DESC
         ");
@@ -157,7 +157,7 @@ if ($action === 'complete_delivery_qr') {
         SELECT o.id, o.user_id, u.qr_code_hash
         FROM orders o
         JOIN users u ON o.user_id = u.id
-        WHERE o.id = ? AND o.delivery_id = ? AND o.status = 'in_process'
+        WHERE o.id = ? AND o.delivery_id = ? AND o.status = 'out_for_delivery'
     ");
     $stmt->execute([$orderId, $deliveryId]);
     $order = $stmt->fetch();

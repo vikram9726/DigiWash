@@ -81,24 +81,10 @@ function sendPushNotification($pdo, $userId, $title, $body) {
     // Search in all three tables since we don't know the role here
     $token = null;
     
-    // 1. Try Customers
-    $stmt = $pdo->prepare("SELECT fcm_token FROM customers WHERE id = ?");
+    // 1. Search in users table
+    $stmt = $pdo->prepare("SELECT fcm_token FROM users WHERE id = ?");
     $stmt->execute([$userId]);
     $token = $stmt->fetchColumn();
-    
-    // 2. Try Delivery
-    if (!$token) {
-        $stmt = $pdo->prepare("SELECT fcm_token FROM delivery_partners WHERE id = ?");
-        $stmt->execute([$userId]);
-        $token = $stmt->fetchColumn();
-    }
-    
-    // 3. Try Admins
-    if (!$token) {
-        $stmt = $pdo->prepare("SELECT fcm_token FROM admins WHERE id = ?");
-        $stmt->execute([$userId]);
-        $token = $stmt->fetchColumn();
-    }
 
     if (!$token) return false;
 

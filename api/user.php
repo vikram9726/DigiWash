@@ -41,14 +41,14 @@ if ($action === 'update_profile') {
     $stmt->execute([$userId]);
     $orders = $stmt->fetchAll();
 
-    // Latest Profile Info from customers table
-    $stmt = $pdo->prepare("SELECT name, phone, email, shop_address, qr_code_hash FROM customers WHERE id = ?");
+    // Latest Profile Info from users table
+    $stmt = $pdo->prepare("SELECT name, phone, email, shop_address, qr_code_hash FROM users WHERE id = ?");
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
     // Check if the user is allowed to edit address (No ongoing payments logic - simplified here)
     // We update the data
     try {
-        $stmt = $pdo->prepare("UPDATE customers SET name = ?, email = ?, shop_address = ?, alt_contact = ? WHERE id = ?");
+        $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, shop_address = ?, alt_contact = ? WHERE id = ?");
         $stmt->execute([$name, $email, $shopAddress, $altContact, $userId]);
         
         respond(true, 'Profile updated successfully!');
@@ -62,7 +62,7 @@ if ($action === 'save_fcm_token') {
     if (empty($token)) respond(false, 'Token missing');
 
     try {
-        $stmt = $pdo->prepare("UPDATE customers SET fcm_token = ? WHERE id = ?");
+        $stmt = $pdo->prepare("UPDATE users SET fcm_token = ? WHERE id = ?");
         $stmt->execute([$token, $userId]);
         respond(true, 'Token saved');
     } catch (\Exception $e) {
