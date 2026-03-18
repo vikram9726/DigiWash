@@ -20,7 +20,7 @@ $data = json_decode(file_get_contents('php://input'), true);
 $action = $data['action'] ?? '';
 
 // CSRF Protection Check for authenticated actions (like logout)
-if ($action !== 'firebase_login' && $action !== 'login') {
+if ($action !== 'firebase_login' && $action !== 'login' && $action !== 'dummy_login') {
     $headers = getallheaders();
     $csrfToken = $headers['X-CSRF-Token'] ?? (is_array($data) ? ($data['csrf_token'] ?? '') : '') ?? $_POST['csrf_token'] ?? '';
 
@@ -137,8 +137,8 @@ if ($action === 'firebase_login') {
 }
 
 if ($action === 'dummy_login') {
-    $phone = filter_var($data['phone'] ?? '', FILTER_SANITIZE_STRING);
-    $otp = filter_var($data['otp'] ?? '', FILTER_SANITIZE_STRING);
+    $phone = preg_replace('/[^0-9]/', '', $data['phone'] ?? '');
+    $otp = preg_replace('/[^0-9A-Za-z]/', '', $data['otp'] ?? '');
 
     if (empty($phone) || empty($otp)) {
         respond(false, 'Phone and OTP are required.');

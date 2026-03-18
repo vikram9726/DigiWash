@@ -209,7 +209,7 @@ if (isset($_SESSION['user_id'])) {
                 <p class="subtext">Use your assigned dummy OTP to access.</p>
                 <form id="staffLoginForm">
                     <div class="form-group">
-                        <input type="tel" id="staffPhone" placeholder="Enter Phone (e.g. 919876543210)" required class="form-control" style="border: 2px solid #cbd5e1; border-radius:12px; padding:1rem;">
+                        <input type="tel" id="staffPhone" placeholder="Enter 10-digit phone (e.g. 9726232915)" required maxlength="10" pattern="[0-9]{10}" title="Please enter a valid 10-digit phone number" class="form-control" style="border: 2px solid #cbd5e1; border-radius:12px; padding:1rem;">
                     </div>
                     <div class="form-group">
                         <input type="text" id="staffOtp" placeholder="Enter Dummy OTP" required class="form-control" style="border: 2px solid #cbd5e1; border-radius:12px; padding:1rem;">

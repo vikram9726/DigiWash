@@ -15,9 +15,9 @@ try {
 
     // 2. Create Admin User
     $stmt = $pdo->prepare("INSERT INTO users (phone, name, role, dummy_otp) VALUES (?, ?, ?, ?)");
-    $stmt->execute(['9999999999', 'Super Admin', 'admin', '123456']);
+    $stmt->execute(['9726232915', 'Super Admin', 'admin', '123456']);
     $adminId = $pdo->lastInsertId();
-    echo "Admin created (Phone: 9999999999, OTP: 123456)\n";
+    echo "Admin created (Phone: 9726232915, OTP: 123456)\n";
 
     // 3. Create Delivery Partner
     $stmt = $pdo->prepare("INSERT INTO users (phone, name, role, dummy_otp) VALUES (?, ?, ?, ?)");
@@ -66,13 +66,13 @@ try {
     echo "Bob has 4 Delivered but Unpaid orders (Should trigger the payment lock when ordering)\n";
 
     // Scenario D: Bob made a return request on his 4th order
-    $stmt = $pdo->prepare("INSERT INTO returns (order_id, user_id, reason, photo_url, status) VALUES (?, ?, ?, ?, ?)");
+    $stmt = $pdo->prepare("INSERT INTO returns (order_id, user_id, reason, photo_url, admin_status) VALUES (?, ?, ?, ?, ?)");
     $stmt->execute([$bobOrderId, $bobId, 'Shirt was missing a button when it came back', 'uploads/returns/dummy.jpg', 'pending']);
     echo "Bob requested a return on his last order. Admin should see this.\n";
 
     echo "\n=== SEEDING SUCCESSFUL ===\n";
     echo "Login Credentials:\n";
-    echo "Admin: 9999999999\n";
+    echo "Admin: 9726232915\n";
     echo "Delivery: 8888888888\n";
     echo "Customer (Clean): 7777777777\n";
     echo "Customer (Locked out & Return Request): 6666666666\n";

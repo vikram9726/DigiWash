@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS orders (
     status ENUM('pending', 'picked_up', 'in_process', 'out_for_delivery', 'delivered', 'cancelled') DEFAULT 'pending',
     total_amount DECIMAL(10, 2) DEFAULT 0.00,
     payment_status ENUM('remaining', 'completed') DEFAULT 'remaining',
+    instructions TEXT,
     cancellation_reason TEXT,
     delivery_otp VARCHAR(6),
     bypass_photo_url VARCHAR(255),
@@ -77,4 +78,4 @@ CREATE TABLE IF NOT EXISTS coupons (
 );
 
 -- Default Admin User (Password is typically not needed if using strict phone/OTP login, but let's keep it simple with phone login for now)
-INSERT INTO users (phone, role, name) VALUES ('9999999999', 'admin', 'System Admin') ON DUPLICATE KEY UPDATE name='System Admin';
+INSERT INTO users (phone, role, name) VALUES ('9726232915', 'admin', 'System Admin') ON DUPLICATE KEY UPDATE name='System Admin';
