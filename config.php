@@ -1,4 +1,11 @@
 <?php
+// Suppress PHP errors from being output (would break JSON API responses)
+// Errors are still logged to PHP error log for debugging
+ini_set('display_errors', 0);
+ini_set('display_startup_errors', 0);
+error_reporting(E_ALL);
+ini_set('log_errors', 1);
+
 // Secure Session Settings before starting session
 ini_set('session.cookie_httponly', 1);
 ini_set('session.use_only_cookies', 1);

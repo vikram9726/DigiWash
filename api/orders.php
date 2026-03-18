@@ -53,7 +53,7 @@ if ($action === 'get_dashboard_stats') {
 // --- CREATE ORDER ---
 if ($action === 'create_order') {
     $weight = (float)($data['weight'] ?? 0);
-    $instructions = filter_var($data['instructions'] ?? '', FILTER_SANITIZE_STRING);
+    $instructions = htmlspecialchars(strip_tags($data['instructions'] ?? ''), ENT_QUOTES, 'UTF-8');
 
     if ($weight <= 0) {
         respond(false, 'Please enter a valid approximate weight.');
@@ -84,27 +84,52 @@ if ($action === 'create_order') {
         try {
             $pdo->beginTransaction();
 
-            $pricePerKg = 50; 
+            $pricePerKg = 50;
             $baseAmount = $weight * $pricePerKg;
             $discount = 0;
-            $couponCode = filter_var($data['coupon_code'] ?? '', FILTER_SANITIZE_STRING);
+            $appliedCouponId = null;
+            $couponCode = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $data['coupon_code'] ?? ''));
 
             if (!empty($couponCode)) {
-                $stmt = $pdo->prepare("SELECT * FROM coupons WHERE code = ? AND is_active = 1");
-                $stmt->execute([$couponCode]);
+                $stmt = $pdo->prepare("
+                    SELECT * FROM coupons 
+                    WHERE code = ? AND is_active = 1 
+                    AND (expires_at IS NULL OR expires_at > NOW())
+                    AND min_order_amount <= ?
+                ");
+                $stmt->execute([$couponCode, $baseAmount]);
                 $coupon = $stmt->fetch();
+
                 if ($coupon) {
+                    // Check total usage limit
+                    if ($coupon['usage_limit'] !== null) {
+                        $totalUsed = $pdo->prepare("SELECT COUNT(*) FROM coupon_usages WHERE coupon_id = ?");
+                        $totalUsed->execute([$coupon['id']]);
+                        if ($totalUsed->fetchColumn() >= $coupon['usage_limit']) {
+                            $pdo->rollBack();
+                            respond(false, 'This coupon has reached its maximum usage limit.');
+                        }
+                    }
+                    // Check per-user limit
+                    $userUsed = $pdo->prepare("SELECT COUNT(*) FROM coupon_usages WHERE coupon_id = ? AND user_id = ?");
+                    $userUsed->execute([$coupon['id'], $userId]);
+                    if ($userUsed->fetchColumn() >= $coupon['per_user_limit']) {
+                        $pdo->rollBack();
+                        respond(false, 'You have already used this coupon the maximum number of times allowed.');
+                    }
+
                     if ($coupon['discount_type'] === 'percentage') {
                         $discount = $baseAmount * ($coupon['discount_value'] / 100);
                     } else {
                         $discount = $coupon['discount_value'];
                     }
+                    $appliedCouponId = $coupon['id'];
                 }
             }
 
             $totalAmount = max(0, $baseAmount - $discount);
 
-            $stmt = $pdo->prepare("INSERT INTO orders (user_id, status, total_amount, payment_status, cancellation_reason) VALUES (?, 'pending', ?, 'remaining', ?)");
+            $stmt = $pdo->prepare("INSERT INTO orders (user_id, status, total_amount, payment_status, instructions) VALUES (?, 'pending', ?, 'remaining', ?)");
             $stmt->execute([$userId, $totalAmount, $instructions]);
             $orderId = $pdo->lastInsertId();
 
@@ -112,12 +137,18 @@ if ($action === 'create_order') {
             $stmt = $pdo->prepare("INSERT INTO payments (user_id, order_id, payment_mode, status, amount) VALUES (?, ?, 'COD', 'remaining', ?)");
             $stmt->execute([$userId, $orderId, $totalAmount]);
 
+            // 5. Log coupon usage
+            if ($appliedCouponId) {
+                $stmt = $pdo->prepare("INSERT INTO coupon_usages (coupon_id, user_id, order_id, discount_amount) VALUES (?, ?, ?, ?)");
+                $stmt->execute([$appliedCouponId, $userId, $orderId, $discount]);
+            }
+
             $pdo->commit();
             respond(true, 'Order created successfully! Our delivery partner will be assigned shortly.');
         } catch (\Exception $e) {
-        $pdo->rollBack();
-        respond(false, 'Failed to create order. Error: ' . $e->getMessage());
-    }
+            $pdo->rollBack();
+            respond(false, 'Failed to create order. Error: ' . $e->getMessage());
+        }
 }
 
 // --- FETCH ORDERS ---
@@ -149,10 +180,15 @@ if ($action === 'get_payments') {
 
 // --- VALIDATE COUPON ---
 if ($action === 'validate_coupon') {
-    $code = filter_var($data['coupon_code'] ?? '', FILTER_SANITIZE_STRING);
+    $code = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $data['coupon_code'] ?? ''));
+    $orderAmount = (float)($data['order_amount'] ?? 0);
     if (empty($code)) respond(false, 'Coupon code is required.');
 
-    $stmt = $pdo->prepare("SELECT * FROM coupons WHERE code = ? AND is_active = 1");
+    $stmt = $pdo->prepare("
+        SELECT * FROM coupons 
+        WHERE code = ? AND is_active = 1 
+        AND (expires_at IS NULL OR expires_at > NOW())
+    ");
     $stmt->execute([$code]);
     $coupon = $stmt->fetch();
 
@@ -160,16 +196,43 @@ if ($action === 'validate_coupon') {
         respond(false, 'Invalid or expired coupon code.');
     }
 
+    // Check minimum order amount
+    if ($orderAmount > 0 && $orderAmount < $coupon['min_order_amount']) {
+        respond(false, 'Minimum order amount of ₹' . $coupon['min_order_amount'] . ' required for this coupon.');
+    }
+
+    // Check total usage limit
+    if ($coupon['usage_limit'] !== null) {
+        $totalUsed = $pdo->prepare("SELECT COUNT(*) FROM coupon_usages WHERE coupon_id = ?");
+        $totalUsed->execute([$coupon['id']]);
+        if ($totalUsed->fetchColumn() >= $coupon['usage_limit']) {
+            respond(false, 'This coupon has reached its maximum usage limit.');
+        }
+    }
+
+    // Check per-user limit
+    $userUsed = $pdo->prepare("SELECT COUNT(*) FROM coupon_usages WHERE coupon_id = ? AND user_id = ?");
+    $userUsed->execute([$coupon['id'], $userId]);
+    if ($userUsed->fetchColumn() >= $coupon['per_user_limit']) {
+        respond(false, 'You have already used this coupon the maximum number of times allowed.');
+    }
+
+    $discount = $coupon['discount_type'] === 'percentage'
+        ? ($orderAmount * ($coupon['discount_value'] / 100))
+        : $coupon['discount_value'];
+
     respond(true, 'Coupon applied!', [
-        'discount_type' => $coupon['discount_type'],
-        'discount_value' => $coupon['discount_value']
+        'discount_type'   => $coupon['discount_type'],
+        'discount_value'  => $coupon['discount_value'],
+        'discount_amount' => round($discount, 2),
+        'min_order'       => $coupon['min_order_amount']
     ]);
 }
 
 // --- SUBMIT RETURN REQUEST ---
 if ($action === 'request_return') {
     $orderId = $_POST['order_id'] ?? 0;
-    $reason = filter_var($_POST['reason'] ?? '', FILTER_SANITIZE_STRING);
+    $reason = htmlspecialchars(strip_tags($_POST['reason'] ?? ''), ENT_QUOTES, 'UTF-8');
 
     if (empty($orderId) || empty($reason)) {
         respond(false, 'Order ID and reason are required.');

@@ -27,10 +27,10 @@ if (!hash_equals($_SESSION['csrf_token'], $csrfToken)) {
 }
 
 if ($action === 'update_profile') {
-    $name = filter_var($data['name'] ?? '', FILTER_SANITIZE_STRING);
+    $name = htmlspecialchars(strip_tags($data['name'] ?? ''), ENT_QUOTES, 'UTF-8');
     $email = filter_var($data['email'] ?? '', FILTER_SANITIZE_EMAIL);
-    $shopAddress = filter_var($data['shop_address'] ?? '', FILTER_SANITIZE_STRING);
-    $altContact = filter_var($data['alt_contact'] ?? '', FILTER_SANITIZE_STRING);
+    $shopAddress = htmlspecialchars(strip_tags($data['shop_address'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $altContact = htmlspecialchars(strip_tags($data['alt_contact'] ?? ''), ENT_QUOTES, 'UTF-8');
 
     if (empty($name) || empty($shopAddress)) {
         respond(false, 'Name and Shop Address are required.');

@@ -60,8 +60,8 @@ if ($action === 'get_assignments') {
             SELECT o.*, u.name as customer_name, u.phone as customer_phone, u.shop_address 
             FROM orders o 
             JOIN users u ON o.user_id = u.id 
-            WHERE o.delivery_id = ? AND o.status NOT IN ('delivered', 'cancelled')
-            ORDER BY o.created_at DESC
+            WHERE o.delivery_id = ? AND o.status = 'delivered'
+            ORDER BY o.updated_at DESC LIMIT 50
         ");
     } else {
         respond(false, 'Invalid assignment type.');
@@ -102,7 +102,7 @@ if ($action === 'fulfill_pickup') {
 // --- FULFILL DELIVERY (OTP) ---
 if ($action === 'complete_delivery_otp') {
     $orderId = $data['order_id'] ?? 0;
-    $otp = filter_var($data['otp'] ?? '', FILTER_SANITIZE_STRING);
+    $otp = htmlspecialchars(strip_tags($data['otp'] ?? ''), ENT_QUOTES, 'UTF-8');
 
     if (empty($otp)) respond(false, 'OTP is required.');
 
@@ -146,7 +146,7 @@ if ($action === 'complete_delivery_otp') {
 // --- BYPASS DELIVERY (PHOTO UPLOAD) ---
 if ($action === 'complete_delivery_qr') {
     $orderId = filter_var($data['order_id'] ?? '', FILTER_VALIDATE_INT);
-    $qrHash = filter_var($data['qr_hash'] ?? '', FILTER_SANITIZE_STRING);
+    $qrHash = htmlspecialchars(strip_tags($data['qr_hash'] ?? ''), ENT_QUOTES, 'UTF-8');
 
     if (!$orderId || empty($qrHash)) {
         respond(false, 'Order ID and QR Code Hash are required.');
@@ -192,7 +192,7 @@ if ($action === 'complete_delivery_qr') {
 
 if ($action === 'complete_delivery_bypass') {
     $orderId = $_POST['order_id'] ?? 0;
-    $staffNumber = filter_var($_POST['staff_number'] ?? '', FILTER_SANITIZE_STRING);
+    $staffNumber = htmlspecialchars(strip_tags($_POST['staff_number'] ?? ''), ENT_QUOTES, 'UTF-8');
     
     if (empty($staffNumber)) {
         respond(false, 'Staff number is required for bypass.');

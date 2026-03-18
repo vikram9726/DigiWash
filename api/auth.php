@@ -68,10 +68,10 @@ if ($action === 'firebase_login') {
     // Some google accounts don't have phone numbers tied, so we fallback to parsing the payload or standardizing later
     $phone = isset($fbUser['phoneNumber']) ? 
         str_replace('+', '', $fbUser['phoneNumber']) : // Strip + if present
-        filter_var($data['phone'] ?? '', FILTER_SANITIZE_STRING); // Fallback to provided payload
+        htmlspecialchars(strip_tags($data['phone'] ?? ''), ENT_QUOTES, 'UTF-8'); // Fallback to provided payload
 
     $email = $fbUser['email'] ?? filter_var($data['email'] ?? '', FILTER_SANITIZE_EMAIL);
-    $name = $fbUser['displayName'] ?? filter_var($data['name'] ?? '', FILTER_SANITIZE_STRING);
+    $name = $fbUser['displayName'] ?? htmlspecialchars(strip_tags($data['name'] ?? ''), ENT_QUOTES, 'UTF-8');
 
     if (empty($phone) && empty($email)) {
         respond(false, 'Unable to extract phone or email to tie account. Please try again.');

@@ -135,12 +135,92 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
                         <tbody id="partnersTableBody"><tr><td colspan="5" style="text-align:center;">Loading...</td></tr></tbody>
                     </table>
                 </div>
-            </section>
-
-            <!-- Marketing Section -->
+            </section>            <!-- Marketing & Coupons Section -->
             <section id="marketing" class="section-content">
-                <h2>Push Notifications & Coupons</h2>
-                <div class="glass-panel" style="margin-top: 1.5rem; max-width: 600px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+                    <div>
+                        <h2 style="margin:0;">🎟️ Coupon Management</h2>
+                        <p style="color:#64748b; margin:0.25rem 0 0;">Create, monitor and control all discount coupons.</p>
+                    </div>
+                    <button class="btn btn-primary" style="width:auto;" onclick="document.getElementById('couponFormPanel').style.display = document.getElementById('couponFormPanel').style.display === 'none' ? 'block' : 'none'">
+                        ＋ Create New Coupon
+                    </button>
+                </div>
+
+                <!-- Create Coupon Form -->
+                <div id="couponFormPanel" class="glass-panel" style="display:none; padding:1.5rem; margin-bottom:2rem;">
+                    <h3 style="margin-bottom:1.2rem;">New Coupon</h3>
+                    <form id="couponForm">
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1rem;">
+                            <div class="form-group">
+                                <label>Coupon Code <span style="color:var(--danger)">*</span></label>
+                                <input type="text" id="couponCode" class="form-control" required placeholder="e.g. SAVE20" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')">
+                            </div>
+                            <div class="form-group">
+                                <label>Discount Type <span style="color:var(--danger)">*</span></label>
+                                <select id="couponType" class="form-control">
+                                    <option value="percentage">Percentage (%)</option>
+                                    <option value="flat">Flat Amount (₹)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Discount Value <span style="color:var(--danger)">*</span></label>
+                                <input type="number" id="couponValue" class="form-control" required min="1" placeholder="e.g. 20">
+                            </div>
+                            <div class="form-group">
+                                <label>Min. Order Amount (₹)</label>
+                                <input type="number" id="couponMinOrder" class="form-control" min="0" placeholder="0 = No minimum">
+                            </div>
+                            <div class="form-group">
+                                <label>Total Usage Limit</label>
+                                <input type="number" id="couponUsageLimit" class="form-control" min="1" placeholder="Leave blank = Unlimited">
+                            </div>
+                            <div class="form-group">
+                                <label>Per User Limit</label>
+                                <input type="number" id="couponPerUser" class="form-control" min="1" value="1" placeholder="e.g. 1">
+                            </div>
+                            <div class="form-group">
+                                <label>Expiry Date (Optional)</label>
+                                <input type="datetime-local" id="couponExpiry" class="form-control">
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:1rem; margin-top:1rem; align-items:center;">
+                            <button type="submit" class="btn btn-success" id="btnCreateCoupon" style="width:auto;">Create Coupon</button>
+                            <button type="button" class="btn btn-outline" style="width:auto;" onclick="document.getElementById('couponFormPanel').style.display='none'">Cancel</button>
+                            <p id="couponFormMsg" style="margin:0; font-weight:600; display:none;"></p>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Coupon Stats Bar -->
+                <div id="couponStats" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap:1rem; margin-bottom:1.5rem;"></div>
+
+                <!-- Coupons Table -->
+                <div class="glass-panel" style="overflow-x:auto; padding:0;">
+                    <table id="couponsTable">
+                        <thead>
+                            <tr>
+                                <th>Code</th>
+                                <th>Type</th>
+                                <th>Value</th>
+                                <th>Min Order</th>
+                                <th>Uses / Limit</th>
+                                <th>Per User</th>
+                                <th>Total Saved (₹)</th>
+                                <th>Expires</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="couponsTableBody">
+                            <tr><td colspan="10" style="text-align:center; padding:2rem;">Loading coupons...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Push Notifications (below) -->
+                <h3 style="margin:2rem 0 1rem;">📢 Send Push Notification</h3>
+                <div class="glass-panel" style="max-width:600px; padding:1.5rem;">
                     <form id="pushForm">
                         <div class="form-group">
                             <label>Notification Title</label>
@@ -155,6 +235,34 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
                     <p id="pushResponse" style="margin-top:1rem; font-weight:600; display:none;"></p>
                 </div>
             </section>
+
+            <!-- Coupon Usage History Drawer (full-width panel below table) -->
+            <div id="usageDrawer" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999; align-items:center; justify-content:center;">
+                <div class="glass-panel" style="width:90%; max-width:900px; max-height:85vh; overflow-y:auto; padding:2rem; position:relative;">
+                    <button onclick="document.getElementById('usageDrawer').style.display='none'" style="position:absolute;top:1rem;right:1rem;background:none;border:none;font-size:1.5rem;cursor:pointer;color:#64748b;">✕</button>
+                    <h3 id="usageDrawerTitle" style="margin-bottom:0.5rem;">Coupon Usage History</h3>
+                    <p id="usageDrawerMeta" style="color:#64748b; margin-bottom:1.5rem;"></p>
+                    <div style="overflow-x:auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>User Name</th>
+                                    <th>Phone</th>
+                                    <th>Email</th>
+                                    <th>Order #</th>
+                                    <th>Order Total (₹)</th>
+                                    <th>Discount Given (₹)</th>
+                                    <th>Used At</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usageTableBody">
+                                <tr><td colspan="8" style="text-align:center;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
 
@@ -428,6 +536,156 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             }
         }
 
+        // ====================== COUPON MANAGEMENT ======================
+
+        async function loadCoupons() {
+            const tbody = document.getElementById('couponsTableBody');
+            const statsBar = document.getElementById('couponStats');
+            const data = await apiCall('get_coupons');
+            if (!data.success) return;
+
+            const coupons = data.coupons;
+
+            // Stats bar
+            const totalActive = coupons.filter(c => c.is_active == 1).length;
+            const totalUsages = coupons.reduce((s, c) => s + parseInt(c.total_used || 0), 0);
+            const totalSaved  = coupons.reduce((s, c) => s + parseFloat(c.total_discount_given || 0), 0);
+            statsBar.innerHTML = `
+                <div class="glass-panel stat-card"><h3>Active Coupons</h3><div class="value" style="font-size:2rem;">${totalActive}</div></div>
+                <div class="glass-panel stat-card"><h3>Total Redemptions</h3><div class="value" style="font-size:2rem;">${totalUsages}</div></div>
+                <div class="glass-panel stat-card"><h3>Total Discount Given</h3><div class="value" style="font-size:2rem;">₹${totalSaved.toFixed(2)}</div></div>
+                <div class="glass-panel stat-card"><h3>Total Coupons</h3><div class="value" style="font-size:2rem;">${coupons.length}</div></div>
+            `;
+
+            if (coupons.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:2rem; color:#94a3b8;">No coupons yet. Click "+ Create New Coupon" to add one.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = coupons.map(c => {
+                const isActive = c.is_active == 1;
+                const usageDisplay = c.usage_limit ? `${c.total_used} / ${c.usage_limit}` : `${c.total_used} / ∞`;
+                const expiryDisplay = c.expires_at ? new Date(c.expires_at).toLocaleString() : '—';
+                const expiryWarning = c.expires_at && new Date(c.expires_at) < new Date() ? ' style="color:var(--danger)"' : '';
+                const discountDisplay = c.discount_type === 'percentage' ? `${c.discount_value}%` : `₹${c.discount_value}`;
+                const minDisplay = c.min_order_amount > 0 ? `₹${c.min_order_amount}` : 'None';
+
+                return `<tr>
+                    <td><strong style="font-family:monospace; font-size:1rem; letter-spacing:1px;">${c.code}</strong></td>
+                    <td><span class="badge ${c.discount_type === 'percentage' ? 'badge-info' : 'badge-success'}">${c.discount_type === 'percentage' ? 'Percent' : 'Flat'}</span></td>
+                    <td><strong>${discountDisplay}</strong></td>
+                    <td>${minDisplay}</td>
+                    <td>
+                        <span style="font-weight:600;">${usageDisplay}</span>
+                        ${c.total_used > 0 ? `<br><small><a href="javascript:void(0)" onclick="viewCouponUsage(${c.id}, '${c.code}')" style="color:var(--primary);">View History</a></small>` : ''}
+                    </td>
+                    <td>${c.per_user_limit}x</td>
+                    <td style="color: ${parseFloat(c.total_discount_given) > 0 ? 'var(--danger)' : '#94a3b8'};">₹${parseFloat(c.total_discount_given || 0).toFixed(2)}</td>
+                    <td${expiryWarning}>${expiryDisplay}</td>
+                    <td>
+                        <span class="badge ${isActive ? 'badge-success' : 'badge-danger'}">${isActive ? 'Active' : 'Inactive'}</span>
+                    </td>
+                    <td style="white-space:nowrap;">
+                        <button class="btn ${isActive ? 'btn-outline' : 'btn-success'}" style="padding:0.3rem 0.6rem; font-size:0.78rem; width:auto;" onclick="toggleCoupon(${c.id})">
+                            ${isActive ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <button class="btn btn-danger" style="padding:0.3rem 0.6rem; font-size:0.78rem; width:auto; margin-top:3px;" onclick="deleteCoupon(${c.id}, '${c.code}')">
+                            Delete
+                        </button>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        async function toggleCoupon(couponId) {
+            const res = await apiCall('toggle_coupon', { coupon_id: couponId });
+            if (res.success) loadCoupons();
+            else alert(res.message);
+        }
+
+        async function deleteCoupon(couponId, code) {
+            if (!confirm(`Delete coupon "${code}"? This will also remove all usage history.`)) return;
+            const res = await apiCall('delete_coupon', { coupon_id: couponId });
+            if (res.success) loadCoupons();
+            else alert(res.message);
+        }
+
+        async function viewCouponUsage(couponId, code) {
+            document.getElementById('usageDrawerTitle').innerText = `Usage History: ${code}`;
+            document.getElementById('usageDrawerMeta').innerText = 'Loading...';
+            document.getElementById('usageTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding:1.5rem;">Loading...</td></tr>';
+            document.getElementById('usageDrawer').style.display = 'flex';
+
+            const res = await apiCall('get_coupon_usage', { coupon_id: couponId });
+            if (!res.success) {
+                document.getElementById('usageDrawerMeta').innerText = res.message;
+                return;
+            }
+
+            const usages = res.usages;
+            document.getElementById('usageDrawerMeta').innerText = `${usages.length} redemption(s) found for coupon "${code}"`;
+
+            if (usages.length === 0) {
+                document.getElementById('usageTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center; color:#94a3b8; padding:2rem;">No usages recorded yet.</td></tr>';
+                return;
+            }
+
+            document.getElementById('usageTableBody').innerHTML = usages.map((u, i) => `
+                <tr>
+                    <td>${i + 1}</td>
+                    <td><strong>${u.user_name || '—'}</strong></td>
+                    <td>${u.user_phone}</td>
+                    <td>${u.user_email || '—'}</td>
+                    <td>#${u.order_id}</td>
+                    <td>₹${parseFloat(u.order_total).toFixed(2)}</td>
+                    <td style="color:var(--danger); font-weight:600;">−₹${parseFloat(u.discount_amount).toFixed(2)}</td>
+                    <td>${new Date(u.used_at).toLocaleString()}</td>
+                </tr>
+            `).join('');
+        }
+
+        document.getElementById('couponForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('btnCreateCoupon');
+            const msg = document.getElementById('couponFormMsg');
+            btn.innerHTML = 'Creating...'; btn.disabled = true;
+            msg.style.display = 'none';
+
+            const res = await apiCall('create_coupon', {
+                code:             document.getElementById('couponCode').value,
+                discount_type:    document.getElementById('couponType').value,
+                discount_value:   document.getElementById('couponValue').value,
+                min_order_amount: document.getElementById('couponMinOrder').value || 0,
+                usage_limit:      document.getElementById('couponUsageLimit').value || '',
+                per_user_limit:   document.getElementById('couponPerUser').value || 1,
+                expires_at:       document.getElementById('couponExpiry').value || ''
+            });
+
+            msg.innerText = res.message;
+            msg.style.display = 'block';
+            msg.style.color = res.success ? 'var(--secondary)' : 'var(--danger)';
+            btn.innerHTML = 'Create Coupon'; btn.disabled = false;
+
+            if (res.success) {
+                setTimeout(() => {
+                    document.getElementById('couponFormPanel').style.display = 'none';
+                    document.getElementById('couponForm').reset();
+                    msg.style.display = 'none';
+                    loadCoupons();
+                }, 1500);
+            }
+        });
+
+        // Load coupons when marketing tab is opened
+        const originalSwitchTab = window.switchTab;
+        function switchTab(tabId) {
+            document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            document.querySelectorAll('.section-content').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            if (tabId === 'marketing') loadCoupons();
+        }
+
         document.getElementById('pushForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const btn = document.getElementById('btnPush');
@@ -443,7 +701,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             msg.style.display = 'block';
             msg.style.color = data.success ? 'var(--secondary)' : 'var(--danger)';
             btn.innerHTML = 'Send Push Notification'; btn.disabled = false;
-            
+
             if(data.success) document.getElementById('pushForm').reset();
         });
     </script>

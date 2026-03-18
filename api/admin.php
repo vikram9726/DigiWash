@@ -115,8 +115,8 @@ if ($action === 'cancel_order') {
         $stmt = $pdo->prepare("UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$orderId]);
 
-        // Also cancel the pending payment
-        $stmt = $pdo->prepare("UPDATE payments SET status = 'cancelled', updated_at = NOW() WHERE order_id = ? AND status = 'remaining'");
+        // Cancel the pending payment — 'cancelled' is not in ENUM, mark as completed since order is voided
+        $stmt = $pdo->prepare("UPDATE payments SET status = 'completed', updated_at = NOW() WHERE order_id = ? AND status = 'remaining'");
         $stmt->execute([$orderId]);
 
         $pdo->commit();
@@ -129,12 +129,11 @@ if ($action === 'cancel_order') {
 
 // --- FETCH RETURN REQUESTS ---
 if ($action === 'get_returns') {
-    // Fetch return requests mapped to orders
     $stmt = $pdo->query("
-        SELECT r.*, o.total_amount, u.name as customer_name, u.phone 
+        SELECT r.*, r.admin_status as status, o.total_amount, u.name as customer_name, u.phone 
         FROM returns r
         JOIN orders o ON r.order_id = o.id
-        JOIN users u ON o.user_id = u.id
+        JOIN users u ON r.order_id = o.id AND o.user_id = u.id
         ORDER BY r.created_at DESC
     ");
     $returns = $stmt->fetchAll();
@@ -144,18 +143,17 @@ if ($action === 'get_returns') {
 // --- APPROVE/DECLINE RETURN ---
 if ($action === 'handle_return') {
     $returnId = $data['return_id'] ?? 0;
-    $status = $data['status'] ?? ''; // 'approved', 'rejected'
+    $status = $data['status'] ?? '';
+    // Map 'rejected' to 'declined' to match DB ENUM('pending','approved','declined')
+    if ($status === 'rejected') $status = 'declined';
 
-    if (!in_array($status, ['approved', 'rejected'])) {
+    if (!in_array($status, ['approved', 'declined'])) {
         respond(false, 'Invalid status.');
     }
 
     try {
-        $stmt = $pdo->prepare("UPDATE returns SET status = ? WHERE id = ?");
+        $stmt = $pdo->prepare("UPDATE returns SET admin_status = ? WHERE id = ?");
         $stmt->execute([$status, $returnId]);
-
-        // Note: If approved, you might generate a refund payment log or queue a pickup. Let's keep it simple.
-        
         respond(true, 'Return request ' . $status . ' successfully.');
     } catch (\Exception $e) {
         respond(false, 'Database Error: ' . $e->getMessage());
@@ -171,9 +169,9 @@ if ($action === 'get_partners') {
 
 // --- CREATE DELIVERY PARTNER ---
 if ($action === 'create_delivery_partner') {
-    $name = filter_var($data['name'] ?? '', FILTER_SANITIZE_STRING);
-    $phone = filter_var($data['phone'] ?? '', FILTER_SANITIZE_STRING);
-    $otp = filter_var($data['otp'] ?? '', FILTER_SANITIZE_STRING);
+    $name = htmlspecialchars(strip_tags($data['name'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $phone = htmlspecialchars(strip_tags($data['phone'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $otp = htmlspecialchars(strip_tags($data['otp'] ?? ''), ENT_QUOTES, 'UTF-8');
 
     if (empty($name) || empty($phone) || empty($otp)) {
         respond(false, 'Name, Phone, and Dummy OTP are required.');
@@ -190,8 +188,8 @@ if ($action === 'create_delivery_partner') {
 
 // --- PUSH NOTIFICATIONS (SIMULATED) ---
 if ($action === 'send_notification') {
-    $title = filter_var($data['title'] ?? '', FILTER_SANITIZE_STRING);
-    $message = filter_var($data['message'] ?? '', FILTER_SANITIZE_STRING);
+    $title = htmlspecialchars(strip_tags($data['title'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $message = htmlspecialchars(strip_tags($data['message'] ?? ''), ENT_QUOTES, 'UTF-8');
 
     if (empty($title) || empty($message)) {
         respond(false, 'Title and message are required.');
@@ -222,6 +220,95 @@ if ($action === 'get_analytics') {
         'revenue' => $revenueData,
         'distribution' => $distribution
     ]);
+}
+
+// --- GET ALL COUPONS ---
+if ($action === 'get_coupons') {
+    $stmt = $pdo->query("
+        SELECT c.*,
+            COUNT(cu.id) as total_used,
+            COALESCE(SUM(cu.discount_amount), 0) as total_discount_given
+        FROM coupons c
+        LEFT JOIN coupon_usages cu ON c.id = cu.coupon_id
+        GROUP BY c.id
+        ORDER BY c.created_at DESC
+    ");
+    respond(true, 'Coupons fetched', ['coupons' => $stmt->fetchAll()]);
+}
+
+// --- CREATE COUPON ---
+if ($action === 'create_coupon') {
+    $code         = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $data['code'] ?? ''));
+    $type         = $data['discount_type'] ?? 'flat';
+    $value        = (float)($data['discount_value'] ?? 0);
+    $usageLimit   = isset($data['usage_limit']) && $data['usage_limit'] !== '' ? (int)$data['usage_limit'] : null;
+    $perUserLimit = (int)($data['per_user_limit'] ?? 1);
+    $minOrder     = (float)($data['min_order_amount'] ?? 0);
+    $expiresAt    = !empty($data['expires_at']) ? $data['expires_at'] : null;
+
+    if (empty($code) || $value <= 0 || !in_array($type, ['percentage', 'flat'])) {
+        respond(false, 'Code, valid type and positive discount value are required.');
+    }
+    if ($type === 'percentage' && $value > 100) {
+        respond(false, 'Percentage discount cannot exceed 100%.');
+    }
+
+    try {
+        $stmt = $pdo->prepare("
+            INSERT INTO coupons (code, discount_type, discount_value, usage_limit, per_user_limit, min_order_amount, expires_at, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        ");
+        $stmt->execute([$code, $type, $value, $usageLimit, $perUserLimit, $minOrder, $expiresAt]);
+        respond(true, "Coupon '$code' created successfully!");
+    } catch (\Exception $e) {
+        if (str_contains($e->getMessage(), 'Duplicate')) {
+            respond(false, 'A coupon with that code already exists.');
+        }
+        respond(false, 'DB Error: ' . $e->getMessage());
+    }
+}
+
+// --- TOGGLE COUPON ACTIVE ---
+if ($action === 'toggle_coupon') {
+    $couponId = (int)($data['coupon_id'] ?? 0);
+    if (!$couponId) respond(false, 'Invalid coupon ID.');
+    try {
+        $pdo->prepare("UPDATE coupons SET is_active = NOT is_active WHERE id = ?")->execute([$couponId]);
+        respond(true, 'Coupon status toggled.');
+    } catch (\Exception $e) {
+        respond(false, 'DB Error: ' . $e->getMessage());
+    }
+}
+
+// --- DELETE COUPON ---
+if ($action === 'delete_coupon') {
+    $couponId = (int)($data['coupon_id'] ?? 0);
+    if (!$couponId) respond(false, 'Invalid coupon ID.');
+    try {
+        $pdo->prepare("DELETE FROM coupons WHERE id = ?")->execute([$couponId]);
+        respond(true, 'Coupon deleted.');
+    } catch (\Exception $e) {
+        respond(false, 'DB Error: ' . $e->getMessage());
+    }
+}
+
+// --- GET COUPON USAGE HISTORY ---
+if ($action === 'get_coupon_usage') {
+    $couponId = (int)($data['coupon_id'] ?? 0);
+    if (!$couponId) respond(false, 'Invalid coupon ID.');
+
+    $stmt = $pdo->prepare("
+        SELECT cu.id, cu.used_at, cu.discount_amount, cu.order_id,
+               u.name as user_name, u.phone as user_phone, u.email as user_email,
+               o.total_amount as order_total
+        FROM coupon_usages cu
+        JOIN users u ON cu.user_id = u.id
+        JOIN orders o ON cu.order_id = o.id
+        WHERE cu.coupon_id = ?
+        ORDER BY cu.used_at DESC
+    ");
+    $stmt->execute([$couponId]);
+    respond(true, 'Usage fetched', ['usages' => $stmt->fetchAll()]);
 }
 
 respond(false, 'Invalid action specified in api/admin.php');

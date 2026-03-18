@@ -503,17 +503,28 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
         // Coupon Validation
         document.getElementById('applyCouponBtn')?.addEventListener('click', async () => {
             const code = document.getElementById('couponCode').value;
+            const weight = parseFloat(document.getElementById('orderWeight').value) || 0;
+            const orderAmount = weight * 50; // ₹50/kg
             const feedback = document.getElementById('couponFeedback');
-            if(!code) return;
+            if(!code) { feedback.innerText = 'Please enter a coupon code.'; feedback.style.color = 'var(--danger)'; return; }
             
-            const res = await fetch('../api/orders.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
-                body: JSON.stringify({ action: 'validate_coupon', coupon_code: code })
-            });
-            const data = await res.json();
-            feedback.innerText = data.message;
-            feedback.style.color = data.success ? 'var(--secondary)' : 'var(--danger)';
+            feedback.innerText = 'Validating...'; feedback.style.color = '#94a3b8';
+            try {
+                const res = await fetch('../api/orders.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                    body: JSON.stringify({ action: 'validate_coupon', coupon_code: code, order_amount: orderAmount })
+                });
+                const data = await res.json();
+                feedback.innerText = data.message;
+                feedback.style.color = data.success ? 'var(--secondary)' : 'var(--danger)';
+                if (data.success && data.discount_amount > 0) {
+                    feedback.innerText = `✓ ${data.message} — You save ₹${data.discount_amount}`;
+                }
+            } catch(e) {
+                feedback.innerText = 'Error connecting to server. Please try again.';
+                feedback.style.color = 'var(--danger)';
+            }
         });
 
         // Create Order Submit Logic
