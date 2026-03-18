@@ -1,8 +1,7 @@
 <?php
 require_once '../config.php';
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
-    header('Location: ../index.php');
-    exit;
+    header('Location: ../index.php'); exit;
 }
 ?>
 <!DOCTYPE html>
@@ -15,695 +14,831 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     <link rel="stylesheet" href="../assets/css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        .container { max-width: 1400px; margin: 2rem auto; padding: 0 1rem; }
-        .dashboard-grid { display: grid; grid-template-columns: 250px 1fr; gap: 2rem; }
-        .sidebar { display: flex; flex-direction: column; gap: 0.5rem; height: max-content;}
-        .menu-item { display: flex; align-items: center; padding: 1rem; border-radius: 12px; cursor: pointer; font-weight: 600; color: var(--dark); transition: all 0.3s; }
-        .menu-item i { margin-right: 15px; }
-        .menu-item:hover, .menu-item.active { background: var(--primary-gradient); color: white; box-shadow: 0 4px 15px rgba(79, 70, 229, 0.3); }
-        .section-content { display: none; animation: slideUp 0.4s ease forwards; }
-        .section-content.active { display: block; }
+        :root { --sidebar-w: 240px; }
+        body { background: #f1f5f9; }
+        .admin-wrap { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
 
-        /* Stats & Layout */
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
-        .stat-card { padding: 1.5rem; text-align: center; }
-        .stat-card h3 { font-size: 1.1rem; color: #475569; }
-        .stat-card .value { font-size: 2.5rem; font-weight: 700; color: var(--primary); }
+        /* ── Sidebar ── */
+        .sidebar { background: #1e293b; padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: 0.25rem; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+        .sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0.5rem 0.75rem 1.5rem; color: white; font-size: 1.2rem; font-weight: 800; }
+        .sidebar-brand i { color: #6366f1; }
+        .menu-item { display: flex; align-items: center; gap: 12px; padding: 0.75rem 1rem; border-radius: 10px; color: #94a3b8; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; }
+        .menu-item:hover { background: rgba(255,255,255,0.07); color: white; }
+        .menu-item.active { background: linear-gradient(135deg,#6366f1,#4f46e5); color: white; box-shadow: 0 4px 15px rgba(99,102,241,0.4); }
+        .menu-item i { font-size: 1.2rem; }
+        .sidebar-section { font-size: 0.7rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 1px; padding: 1rem 1rem 0.25rem; }
+        .badge-count { background: #ef4444; color: white; border-radius: 999px; font-size: 0.7rem; padding: 1px 6px; margin-left: auto; }
 
-        /* Tables */
-        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-        th, td { padding: 1rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
-        th { font-weight: 600; color: #475569; background: #f8fafc; }
-        tr:hover { background: #f8fafc; }
-        
-        .badge { padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
-        .badge-pending { background: #fef3c7; color: #d97706; }
-        .badge-success { background: #dcfce7; color: #16a34a; }
-        .badge-danger { background: #fee2e2; color: #dc2626; }
-        .badge-info { background: #dbeafe; color: #2563eb; }
+        /* ── Main Content ── */
+        .main-content { padding: 2rem; overflow-x: hidden; }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        .page-title { font-size: 1.6rem; font-weight: 800; color: #1e293b; }
+        .page-title span { color: #6366f1; }
+
+        /* ── Section ── */
+        .section-content { display: none; }
+        .section-content.active { display: block; animation: fadeUp 0.3s ease; }
+        @keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+
+        /* ── Stats ── */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1.2rem; margin-bottom: 2rem; }
+        .stat-card { background: white; border-radius: 16px; padding: 1.5rem; display: flex; flex-direction: column; gap: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-left: 4px solid #6366f1; }
+        .stat-card .label { font-size: 0.8rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-card .value { font-size: 2rem; font-weight: 800; color: #1e293b; }
+        .stat-card .sub { font-size: 0.78rem; color: #94a3b8; }
+        .stat-card.green { border-color: #10b981; } .stat-card.green .value { color: #059669; }
+        .stat-card.red { border-color: #ef4444; } .stat-card.red .value { color: #dc2626; }
+        .stat-card.amber { border-color: #f59e0b; } .stat-card.amber .value { color: #d97706; }
+
+        /* ── Panel ── */
+        .panel { background: white; border-radius: 16px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 1.5rem; }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; flex-wrap: wrap; gap: 0.75rem; }
+        .panel-title { font-size: 1.1rem; font-weight: 700; color: #1e293b; }
+        .search-bar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+        .search-bar input, .search-bar select { padding: 0.5rem 0.8rem; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 0.875rem; outline: none; transition: border-color 0.2s; }
+        .search-bar input:focus, .search-bar select:focus { border-color: #6366f1; }
+
+        /* ── Table ── */
+        .tbl-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+        th { background: #f8fafc; color: #64748b; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; padding: 0.75rem 1rem; text-align: left; border-bottom: 1.5px solid #e2e8f0; }
+        td { padding: 0.875rem 1rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+        tr:hover td { background: #f8fafc; }
+
+        /* ── Badge ── */
+        .badge { display: inline-flex; align-items: center; padding: 0.2rem 0.65rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; }
+        .b-green { background:#dcfce7; color:#16a34a; }
+        .b-red { background:#fee2e2; color:#dc2626; }
+        .b-amber { background:#fef3c7; color:#d97706; }
+        .b-blue { background:#dbeafe; color:#2563eb; }
+        .b-purple { background:#ede9fe; color:#7c3aed; }
+        .b-gray { background:#f1f5f9; color:#64748b; }
+
+        /* ── Buttons ── */
+        .btn-sm { padding: 0.3rem 0.7rem; font-size: 0.78rem; border-radius: 7px; border: none; cursor: pointer; font-weight: 600; transition: all 0.15s; white-space: nowrap; }
+        .btn-sm:hover { filter: brightness(0.9); }
+        .btn-primary { background: #6366f1; color: white; }
+        .btn-success { background: #10b981; color: white; }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-amber { background: #f59e0b; color: white; }
+        .btn-outline { background: white; color: #6366f1; border: 1.5px solid #6366f1 !important; }
+        .btn-ghost { background: #f1f5f9; color: #475569; }
+        .btn-lg { padding: 0.7rem 1.5rem; font-size: 0.9rem; border-radius: 10px; }
+        .action-btns { display: flex; gap: 5px; flex-wrap: wrap; }
+
+        /* ── Modal ── */
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 1000; align-items: center; justify-content: center; }
+        .modal-overlay.open { display: flex; }
+        .modal-box { background: white; border-radius: 20px; padding: 2rem; width: 90%; max-width: 480px; max-height: 90vh; overflow-y: auto; position: relative; animation: fadeUp 0.25s ease; }
+        .modal-box.lg { max-width: 800px; }
+        .modal-close { position: absolute; top: 1rem; right: 1rem; background: #f1f5f9; border: none; border-radius: 8px; width: 32px; height: 32px; cursor: pointer; font-size: 1rem; color: #64748b; }
+        .modal-title { font-size: 1.2rem; font-weight: 800; color: #1e293b; margin-bottom: 1.2rem; }
+
+        /* ── Form ── */
+        .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 1rem; margin-bottom: 0.5rem; }
+        .form-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 0.75rem; }
+        .form-group label { font-size: 0.8rem; font-weight: 700; color: #475569; }
+        .form-group input, .form-group select, .form-group textarea { padding: 0.55rem 0.8rem; border: 1.5px solid #e2e8f0; border-radius: 9px; font-size: 0.875rem; outline: none; font-family: inherit; transition: border-color 0.2s; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: #6366f1; }
+        .form-msg { font-size: 0.85rem; font-weight: 600; padding: 0.5rem 0; display: none; }
+
+        /* ── Charts ── */
+        .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem; }
+        @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } .admin-wrap { grid-template-columns: 1fr; } .sidebar { display: none; } }
+
+        /* ── Timeline chips ── */
+        .filter-chips { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+        .chip { padding: 0.3rem 0.85rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; border: 1.5px solid #e2e8f0; cursor: pointer; background: white; color: #64748b; transition: all 0.15s; }
+        .chip.active { background: #6366f1; color: white; border-color: #6366f1; }
+
+        /* ── No data ── */
+        .no-data { text-align: center; padding: 3rem 1rem; color: #94a3b8; }
+        .no-data i { font-size: 3rem; display: block; margin-bottom: 0.5rem; }
+
+        /* ── Partner card ── */
+        .partner-card { display: flex; align-items: center; justify-content: space-between; padding: 1rem; border: 1.5px solid #e2e8f0; border-radius: 12px; margin-bottom: 0.75rem; transition: box-shadow 0.2s; }
+        .partner-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .partner-avatar { width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg,#6366f1,#4f46e5); display: flex; align-items: center; justify-content: center; color: white; font-size: 1.3rem; font-weight: 800; flex-shrink: 0; }
+        .partner-info { flex: 1; margin-left: 1rem; }
+        .partner-info h4 { margin: 0; font-size: 0.95rem; font-weight: 700; }
+        .partner-info p { margin: 2px 0 0; font-size: 0.8rem; color: #64748b; }
+        .partner-stats span { font-size: 0.78rem; background: #f1f5f9; border-radius: 6px; padding: 3px 8px; font-weight: 600; color: #475569; margin-right: 5px; }
     </style>
 </head>
 <body>
-
-    <nav class="navbar">
-        <div class="logo">
-            <span class="material-icons-outlined" style="font-size: 2rem; color: var(--danger);">admin_panel_settings</span>
-            <span>Admin Center</span>
+<div class="admin-wrap">
+    <!-- ── SIDEBAR ── -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <i class="material-icons-outlined">local_laundry_service</i> DigiWash
         </div>
-        <div class="nav-links">
-            <a href="#" id="logoutBtn" style="color: var(--danger); display:flex; align-items:center;">
-                <span class="material-icons-outlined" style="margin-right: 5px;">logout</span> Logout
-            </a>
+        <div class="sidebar-section">Dashboard</div>
+        <div class="menu-item active" id="nav-overview" onclick="switchTab('overview',this)">
+            <i class="material-icons-outlined">insights</i> Overview
         </div>
-    </nav>
+        <div class="sidebar-section">Management</div>
+        <div class="menu-item" id="nav-users" onclick="switchTab('users',this)">
+            <i class="material-icons-outlined">people</i> Customers
+        </div>
+        <div class="menu-item" id="nav-orders" onclick="switchTab('orders',this)">
+            <i class="material-icons-outlined">assignment</i> Orders
+        </div>
+        <div class="menu-item" id="nav-partners" onclick="switchTab('partners',this)">
+            <i class="material-icons-outlined">local_shipping</i> Delivery Partners
+        </div>
+        <div class="menu-item" id="nav-returns" onclick="switchTab('returns',this)">
+            <i class="material-icons-outlined">assignment_return</i> Returns
+            <span class="badge-count" id="returnsBadge" style="display:none">0</span>
+        </div>
+        <div class="sidebar-section">Marketing</div>
+        <div class="menu-item" id="nav-marketing" onclick="switchTab('marketing',this)">
+            <i class="material-icons-outlined">campaign</i> Coupons & Notifs
+        </div>
+        <div style="margin-top:auto; padding-top:2rem;">
+            <div class="menu-item" id="logoutBtn" style="color:#ef4444;">
+                <i class="material-icons-outlined">logout</i> Logout
+            </div>
+        </div>
+    </aside>
 
-    <div class="container dashboard-grid">
-        <aside class="sidebar glass-panel">
-            <div class="menu-item active" onclick="switchTab('overview')"><i class="material-icons-outlined">insights</i><span>Overview</span></div>
-            <div class="menu-item" onclick="switchTab('users')"><i class="material-icons-outlined">people</i><span>Users & Delivery</span></div>
-            <div class="menu-item" onclick="switchTab('orders')"><i class="material-icons-outlined">assignment</i><span>Manage Orders</span></div>
-            <div class="menu-item" onclick="switchTab('partners')"><i class="material-icons-outlined">local_shipping</i><span>Delivery Partners</span></div>
-            <div class="menu-item" onclick="switchTab('returns')"><i class="material-icons-outlined">assignment_return</i><span>Return Requests</span></div>
-            <div class="menu-item" onclick="switchTab('marketing')"><i class="material-icons-outlined">campaign</i><span>Marketing & Coupons</span></div>
-        </aside>
+    <!-- ── MAIN ── -->
+    <main class="main-content">
 
-        <main class="content-area">
-            <!-- Overview Section -->
-            <section id="overview" class="section-content active">
-                <h2 style="margin-bottom: 1.5rem;">Platform Overview</h2>
-                <div class="stats-grid">
-                    <div class="glass-panel stat-card"><h3>Total Revenue</h3><div class="value" id="statRevenue">₹0</div></div>
-                    <div class="glass-panel stat-card"><h3>Active Orders</h3><div class="value" id="statOrders">0</div></div>
-                    <div class="glass-panel stat-card"><h3>Total Users</h3><div class="value" id="statUsers">0</div></div>
-                    <div class="glass-panel stat-card"><h3>Delivery Partners</h3><div class="value" id="statPartners">0</div></div>
-                </div>
+        <!-- ══ OVERVIEW ══ -->
+        <section id="overview" class="section-content active">
+            <div class="top-bar">
+                <div class="page-title">Platform <span>Overview</span></div>
+                <button class="btn-sm btn-outline btn-lg" onclick="refreshAll()">↻ Refresh</button>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-card green"><div class="label">Total Revenue</div><div class="value" id="sRevenue">₹0</div><div class="sub">Collected payments</div></div>
+                <div class="stat-card amber"><div class="label">Pending Dues</div><div class="value" id="sPending">₹0</div><div class="sub">Outstanding balance</div></div>
+                <div class="stat-card"><div class="label">Active Orders</div><div class="value" id="sOrders">0</div><div class="sub">In progress</div></div>
+                <div class="stat-card"><div class="label">Total Orders</div><div class="value" id="sTotalOrders">0</div><div class="sub">All time</div></div>
+                <div class="stat-card"><div class="label">Customers</div><div class="value" id="sUsers">0</div><div class="sub">Registered</div></div>
+                <div class="stat-card"><div class="label">Partners</div><div class="value" id="sPartners">0</div><div class="sub">Delivery staff</div></div>
+                <div class="stat-card red"><div class="label">Pending Returns</div><div class="value" id="sReturns">0</div><div class="sub">Awaiting review</div></div>
+            </div>
+            <div class="charts-grid">
+                <div class="panel"><div class="panel-title" style="margin-bottom:1rem;">Revenue Trend (Last 6 Months)</div><canvas id="revenueChart" height="200"></canvas></div>
+                <div class="panel"><div class="panel-title" style="margin-bottom:1rem;">Order Distribution</div><canvas id="distChart" height="200"></canvas></div>
+            </div>
+            <div class="panel"><div class="panel-title" style="margin-bottom:1rem;">Orders Per Month</div><canvas id="ordersChart" height="100"></canvas></div>
+        </section>
 
-                <div class="dashboard-grid" style="grid-template-columns: 1fr 1fr; margin-top: 2rem;">
-                    <div class="glass-panel" style="padding: 1.5rem;">
-                        <h3 style="margin-bottom:1rem;">Revenue Trends (Last 6 Months)</h3>
-                        <canvas id="revenueChart"></canvas>
+        <!-- ══ CUSTOMERS ══ -->
+        <section id="users" class="section-content">
+            <div class="top-bar"><div class="page-title">Customer <span>Management</span></div></div>
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">All Customers</div>
+                    <div class="search-bar">
+                        <input type="text" id="userSearch" placeholder="Search name / phone / email…" oninput="loadUsers()">
                     </div>
-                    <div class="glass-panel" style="padding: 1.5rem;">
-                        <h3 style="margin-bottom:1rem;">Order Status Distribution</h3>
-                        <canvas id="distributionChart"></canvas>
-                    </div>
                 </div>
-            </section>
-
-            <!-- Users Section -->
-            <section id="users" class="section-content">
-                <h2>User Management</h2>
-                <div class="glass-panel" style="margin-top: 1.5rem; overflow-x: auto;">
+                <div class="tbl-wrap">
                     <table>
-                        <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Address</th><th>Joined</th></tr></thead>
-                        <tbody id="usersTableBody"><tr><td colspan="6" style="text-align:center;">Loading...</td></tr></tbody>
+                        <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Orders</th><th>Spent</th><th>Joined</th><th>Status</th><th>Actions</th></tr></thead>
+                        <tbody id="usersBody"><tr><td colspan="9"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
                     </table>
-                </div>
-            </section>
-
-            <!-- Orders & Routing Section -->
-            <section id="orders" class="section-content">
-                <h2>Live Orders & Routing</h2>
-                <div class="glass-panel" style="margin-top: 1.5rem; overflow-x: auto;">
-                    <table>
-                        <thead><tr><th>Order ID</th><th>Customer</th><th>Status</th><th>Partner Assigned</th><th>Actions</th></tr></thead>
-                        <tbody id="ordersTableBody"><tr><td colspan="5" style="text-align:center;">Loading...</td></tr></tbody>
-                    </table>
-                </div>
-            </section>
-
-            <!-- Returns Section -->
-            <section id="returns" class="section-content">
-                <h2>Return Requests</h2>
-                <div class="glass-panel" style="margin-top: 1.5rem; overflow-x: auto;">
-                    <table>
-                        <thead><tr><th>Return ID</th><th>Order Info</th><th>Customer</th><th>Reason/Photo</th><th>Status</th><th>Actions</th></tr></thead>
-                        <tbody id="returnsTableBody"><tr><td colspan="6" style="text-align:center;">Loading...</td></tr></tbody>
-                    </table>
-                </div>
-            </section>
-
-            <!-- Delivery Partners Section -->
-            <section id="partners" class="section-content">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
-                    <h2>Delivery Partners</h2>
-                    <button class="btn btn-primary" style="width:auto;" onclick="document.getElementById('partnerModal').style.display='flex'">Add Partner</button>
-                </div>
-                <div class="glass-panel" style="overflow-x: auto;">
-                    <table>
-                        <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Dummy OTP</th><th>Date Joined</th></tr></thead>
-                        <tbody id="partnersTableBody"><tr><td colspan="5" style="text-align:center;">Loading...</td></tr></tbody>
-                    </table>
-                </div>
-            </section>            <!-- Marketing & Coupons Section -->
-            <section id="marketing" class="section-content">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
-                    <div>
-                        <h2 style="margin:0;">🎟️ Coupon Management</h2>
-                        <p style="color:#64748b; margin:0.25rem 0 0;">Create, monitor and control all discount coupons.</p>
-                    </div>
-                    <button class="btn btn-primary" style="width:auto;" onclick="document.getElementById('couponFormPanel').style.display = document.getElementById('couponFormPanel').style.display === 'none' ? 'block' : 'none'">
-                        ＋ Create New Coupon
-                    </button>
-                </div>
-
-                <!-- Create Coupon Form -->
-                <div id="couponFormPanel" class="glass-panel" style="display:none; padding:1.5rem; margin-bottom:2rem;">
-                    <h3 style="margin-bottom:1.2rem;">New Coupon</h3>
-                    <form id="couponForm">
-                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1rem;">
-                            <div class="form-group">
-                                <label>Coupon Code <span style="color:var(--danger)">*</span></label>
-                                <input type="text" id="couponCode" class="form-control" required placeholder="e.g. SAVE20" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')">
-                            </div>
-                            <div class="form-group">
-                                <label>Discount Type <span style="color:var(--danger)">*</span></label>
-                                <select id="couponType" class="form-control">
-                                    <option value="percentage">Percentage (%)</option>
-                                    <option value="flat">Flat Amount (₹)</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Discount Value <span style="color:var(--danger)">*</span></label>
-                                <input type="number" id="couponValue" class="form-control" required min="1" placeholder="e.g. 20">
-                            </div>
-                            <div class="form-group">
-                                <label>Min. Order Amount (₹)</label>
-                                <input type="number" id="couponMinOrder" class="form-control" min="0" placeholder="0 = No minimum">
-                            </div>
-                            <div class="form-group">
-                                <label>Total Usage Limit</label>
-                                <input type="number" id="couponUsageLimit" class="form-control" min="1" placeholder="Leave blank = Unlimited">
-                            </div>
-                            <div class="form-group">
-                                <label>Per User Limit</label>
-                                <input type="number" id="couponPerUser" class="form-control" min="1" value="1" placeholder="e.g. 1">
-                            </div>
-                            <div class="form-group">
-                                <label>Expiry Date (Optional)</label>
-                                <input type="datetime-local" id="couponExpiry" class="form-control">
-                            </div>
-                        </div>
-                        <div style="display:flex; gap:1rem; margin-top:1rem; align-items:center;">
-                            <button type="submit" class="btn btn-success" id="btnCreateCoupon" style="width:auto;">Create Coupon</button>
-                            <button type="button" class="btn btn-outline" style="width:auto;" onclick="document.getElementById('couponFormPanel').style.display='none'">Cancel</button>
-                            <p id="couponFormMsg" style="margin:0; font-weight:600; display:none;"></p>
-                        </div>
-                    </form>
-                </div>
-
-                <!-- Coupon Stats Bar -->
-                <div id="couponStats" style="display:grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap:1rem; margin-bottom:1.5rem;"></div>
-
-                <!-- Coupons Table -->
-                <div class="glass-panel" style="overflow-x:auto; padding:0;">
-                    <table id="couponsTable">
-                        <thead>
-                            <tr>
-                                <th>Code</th>
-                                <th>Type</th>
-                                <th>Value</th>
-                                <th>Min Order</th>
-                                <th>Uses / Limit</th>
-                                <th>Per User</th>
-                                <th>Total Saved (₹)</th>
-                                <th>Expires</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="couponsTableBody">
-                            <tr><td colspan="10" style="text-align:center; padding:2rem;">Loading coupons...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Push Notifications (below) -->
-                <h3 style="margin:2rem 0 1rem;">📢 Send Push Notification</h3>
-                <div class="glass-panel" style="max-width:600px; padding:1.5rem;">
-                    <form id="pushForm">
-                        <div class="form-group">
-                            <label>Notification Title</label>
-                            <input type="text" id="pushTitle" class="form-control" required placeholder="e.g. 50% Off Weekend Sale!">
-                        </div>
-                        <div class="form-group">
-                            <label>Message Body</label>
-                            <textarea id="pushMessage" class="form-control" rows="3" required placeholder="Get 50% off on all dry cleaning today only."></textarea>
-                        </div>
-                        <button type="submit" class="btn btn-success" id="btnPush">Send Push Notification</button>
-                    </form>
-                    <p id="pushResponse" style="margin-top:1rem; font-weight:600; display:none;"></p>
-                </div>
-            </section>
-
-            <!-- Coupon Usage History Drawer (full-width panel below table) -->
-            <div id="usageDrawer" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999; align-items:center; justify-content:center;">
-                <div class="glass-panel" style="width:90%; max-width:900px; max-height:85vh; overflow-y:auto; padding:2rem; position:relative;">
-                    <button onclick="document.getElementById('usageDrawer').style.display='none'" style="position:absolute;top:1rem;right:1rem;background:none;border:none;font-size:1.5rem;cursor:pointer;color:#64748b;">✕</button>
-                    <h3 id="usageDrawerTitle" style="margin-bottom:0.5rem;">Coupon Usage History</h3>
-                    <p id="usageDrawerMeta" style="color:#64748b; margin-bottom:1.5rem;"></p>
-                    <div style="overflow-x:auto;">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>#</th>
-                                    <th>User Name</th>
-                                    <th>Phone</th>
-                                    <th>Email</th>
-                                    <th>Order #</th>
-                                    <th>Order Total (₹)</th>
-                                    <th>Discount Given (₹)</th>
-                                    <th>Used At</th>
-                                </tr>
-                            </thead>
-                            <tbody id="usageTableBody">
-                                <tr><td colspan="8" style="text-align:center;">Loading...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
                 </div>
             </div>
-        </main>
-    </div>
+        </section>
 
-    <!-- Add Partner Modal -->
-    <div id="partnerModal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
-        <div class="glass-panel" style="width:400px; padding:2rem;">
-            <h3>Add Delivery Partner</h3>
-            <form id="partnerForm" style="margin-top:1rem;">
-                <div class="form-group">
-                    <label>Full Name</label>
-                    <input type="text" id="partnerName" class="form-control" required placeholder="e.g. John Doe">
+        <!-- ══ ORDERS ══ -->
+        <section id="orders" class="section-content">
+            <div class="top-bar"><div class="page-title">Order <span>Management</span></div></div>
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">All Orders</div>
+                    <div class="search-bar">
+                        <input type="text" id="orderSearch" placeholder="Search order # / customer…" oninput="loadOrders()">
+                        <select id="orderFilter" onchange="loadOrders()">
+                            <option value="all">All Status</option>
+                            <option value="active">Active</option>
+                            <option value="pending">Pending</option>
+                            <option value="in_process">In Process</option>
+                            <option value="out_for_delivery">Out for Delivery</option>
+                            <option value="delivered">Delivered</option>
+                            <option value="cancelled">Cancelled</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label>Phone Number (with 91)</label>
-                    <input type="text" id="partnerPhone" class="form-control" required placeholder="e.g. 919876543210">
+                <div class="tbl-wrap">
+                    <table>
+                        <thead><tr><th>#</th><th>Customer</th><th>Amount</th><th>Status</th><th>Partner</th><th>Date</th><th>Actions</th></tr></thead>
+                        <tbody id="ordersBody"><tr><td colspan="7"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
+                    </table>
                 </div>
-                <div class="form-group">
-                    <label>Dummy OTP for Testing</label>
-                    <input type="text" id="partnerOtp" class="form-control" required placeholder="e.g. 123456" maxlength="6">
+            </div>
+        </section>
+
+        <!-- ══ PARTNERS ══ -->
+        <section id="partners" class="section-content">
+            <div class="top-bar">
+                <div class="page-title">Delivery <span>Partners</span></div>
+                <button class="btn-sm btn-primary btn-lg" onclick="openModal('addPartnerModal')">+ Add Partner</button>
+            </div>
+            <div class="panel">
+                <div class="panel-header"><div class="panel-title">All Delivery Partners</div></div>
+                <div id="partnersContainer"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></div>
+            </div>
+        </section>
+
+        <!-- ══ RETURNS ══ -->
+        <section id="returns" class="section-content">
+            <div class="top-bar"><div class="page-title">Return <span>Requests</span></div></div>
+            <div class="filter-chips">
+                <div class="chip active" onclick="loadReturns('all',this)">All</div>
+                <div class="chip" onclick="loadReturns('pending',this)">Pending</div>
+                <div class="chip" onclick="loadReturns('approved',this)">Approved</div>
+                <div class="chip" onclick="loadReturns('declined',this)">Declined</div>
+            </div>
+            <div class="panel">
+                <div class="tbl-wrap">
+                    <table>
+                        <thead><tr><th>#</th><th>Customer</th><th>Order</th><th>Reason</th><th>Photo</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
+                        <tbody id="returnsBody"><tr><td colspan="8"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
+                    </table>
                 </div>
-                <div style="display:flex; gap:10px; margin-top:1.5rem;">
-                    <button type="submit" class="btn btn-success">Save Partner</button>
-                    <button type="button" class="btn btn-outline" onclick="document.getElementById('partnerModal').style.display='none'">Cancel</button>
+            </div>
+        </section>
+
+        <!-- ══ MARKETING ══ -->
+        <section id="marketing" class="section-content">
+            <div class="top-bar">
+                <div class="page-title">Coupons <span>&amp; Notifications</span></div>
+                <button class="btn-sm btn-primary btn-lg" onclick="openModal('addCouponModal')">+ New Coupon</button>
+            </div>
+            <div id="couponStatsBar" class="stats-grid" style="grid-template-columns:repeat(4,1fr);"></div>
+            <div class="panel">
+                <div class="panel-header"><div class="panel-title">🎟️ Coupons</div></div>
+                <div class="tbl-wrap">
+                    <table>
+                        <thead><tr><th>Code</th><th>Type</th><th>Value</th><th>Min Order</th><th>Uses/Limit</th><th>Per User</th><th>Discount Given</th><th>Expires</th><th>Status</th><th>Actions</th></tr></thead>
+                        <tbody id="couponsBody"><tr><td colspan="10"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
+                    </table>
                 </div>
-            </form>
-            <p id="partnerMsg" style="margin-top:1rem; font-weight:600; display:none;"></p>
+            </div>
+            <div class="panel" style="max-width:600px;">
+                <div class="panel-title" style="margin-bottom:1.2rem;">📢 Send Push Notification</div>
+                <form id="pushForm">
+                    <div class="form-group"><label>Title</label><input type="text" id="pushTitle" required placeholder="e.g. Weekend 20% Off!"></div>
+                    <div class="form-group"><label>Message</label><textarea id="pushMessage" rows="3" required placeholder="Your message here…"></textarea></div>
+                    <div style="display:flex;align-items:center;gap:1rem;">
+                        <button type="submit" class="btn-sm btn-success btn-lg" id="btnPush">Send Notification</button>
+                        <div class="form-msg" id="pushMsg"></div>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+    </main>
+</div>
+
+<!-- ══════════════ MODALS ══════════════ -->
+
+<!-- User Orders Modal -->
+<div class="modal-overlay" id="userOrdersModal">
+    <div class="modal-box lg">
+        <button class="modal-close" onclick="closeModal('userOrdersModal')">✕</button>
+        <div class="modal-title" id="userOrdersTitle">Customer Orders</div>
+        <div class="tbl-wrap"><table>
+            <thead><tr><th>#</th><th>Amount</th><th>Status</th><th>Partner</th><th>Date</th></tr></thead>
+            <tbody id="userOrdersBody"></tbody>
+        </table></div>
+    </div>
+</div>
+
+<!-- Add Partner Modal -->
+<div class="modal-overlay" id="addPartnerModal">
+    <div class="modal-box">
+        <button class="modal-close" onclick="closeModal('addPartnerModal')">✕</button>
+        <div class="modal-title">Add Delivery Partner</div>
+        <form id="addPartnerForm">
+            <div class="form-group"><label>Full Name *</label><input type="text" id="pName" required placeholder="e.g. Rahul Kumar"></div>
+            <div class="form-group"><label>Phone (10 digits) *</label><input type="tel" id="pPhone" required maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').substring(0,10)" placeholder="e.g. 9876543210"></div>
+            <div class="form-group"><label>Login OTP (min 4 digits) *</label><input type="text" id="pOtp" required maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'')" placeholder="e.g. 123456"></div>
+            <div style="display:flex;gap:0.75rem;margin-top:1rem;">
+                <button type="submit" class="btn-sm btn-success btn-lg" id="btnAddPartner">Save Partner</button>
+                <button type="button" class="btn-sm btn-ghost btn-lg" onclick="closeModal('addPartnerModal')">Cancel</button>
+            </div>
+            <div class="form-msg" id="addPartnerMsg"></div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Partner Modal -->
+<div class="modal-overlay" id="editPartnerModal">
+    <div class="modal-box">
+        <button class="modal-close" onclick="closeModal('editPartnerModal')">✕</button>
+        <div class="modal-title">Edit Partner</div>
+        <form id="editPartnerForm">
+            <input type="hidden" id="editPartnerId">
+            <div class="form-group"><label>Full Name *</label><input type="text" id="editPName" required></div>
+            <div class="form-group"><label>New OTP (leave blank to keep)</label><input type="text" id="editPOtp" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'')" placeholder="Leave blank = unchanged"></div>
+            <div style="display:flex;gap:0.75rem;margin-top:1rem;">
+                <button type="submit" class="btn-sm btn-primary btn-lg">Save Changes</button>
+                <button type="button" class="btn-sm btn-ghost btn-lg" onclick="closeModal('editPartnerModal')">Cancel</button>
+            </div>
+            <div class="form-msg" id="editPartnerMsg"></div>
+        </form>
+    </div>
+</div>
+
+<!-- Partner Activity Modal -->
+<div class="modal-overlay" id="partnerActivityModal">
+    <div class="modal-box lg">
+        <button class="modal-close" onclick="closeModal('partnerActivityModal')">✕</button>
+        <div class="modal-title" id="partnerActivityTitle">Partner Activity</div>
+        <div class="tbl-wrap"><table>
+            <thead><tr><th>#</th><th>Customer</th><th>Phone</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+            <tbody id="partnerActivityBody"></tbody>
+        </table></div>
+    </div>
+</div>
+
+<!-- Add Coupon Modal -->
+<div class="modal-overlay" id="addCouponModal">
+    <div class="modal-box lg">
+        <button class="modal-close" onclick="closeModal('addCouponModal')">✕</button>
+        <div class="modal-title">Create New Coupon</div>
+        <form id="addCouponForm">
+            <div class="form-row">
+                <div class="form-group"><label>Coupon Code *</label><input type="text" id="cCode" required placeholder="e.g. SAVE20" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')"></div>
+                <div class="form-group"><label>Discount Type *</label><select id="cType"><option value="percentage">Percentage (%)</option><option value="flat">Flat (₹)</option></select></div>
+                <div class="form-group"><label>Value *</label><input type="number" id="cValue" required min="1" placeholder="e.g. 20"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Min Order Amount (₹)</label><input type="number" id="cMinOrder" min="0" value="0"></div>
+                <div class="form-group"><label>Total Usage Limit</label><input type="number" id="cUsageLimit" min="1" placeholder="Unlimited"></div>
+                <div class="form-group"><label>Per User Limit</label><input type="number" id="cPerUser" min="1" value="1"></div>
+                <div class="form-group"><label>Expiry Date</label><input type="datetime-local" id="cExpiry"></div>
+            </div>
+            <div style="display:flex;gap:0.75rem;margin-top:1rem;">
+                <button type="submit" class="btn-sm btn-success btn-lg" id="btnCreateCoupon">Create Coupon</button>
+                <button type="button" class="btn-sm btn-ghost btn-lg" onclick="closeModal('addCouponModal')">Cancel</button>
+            </div>
+            <div class="form-msg" id="addCouponMsg"></div>
+        </form>
+    </div>
+</div>
+
+<!-- Coupon Usage Modal -->
+<div class="modal-overlay" id="couponUsageModal">
+    <div class="modal-box lg">
+        <button class="modal-close" onclick="closeModal('couponUsageModal')">✕</button>
+        <div class="modal-title" id="couponUsageTitle">Coupon Usage History</div>
+        <div class="tbl-wrap"><table>
+            <thead><tr><th>#</th><th>User</th><th>Phone</th><th>Email</th><th>Order</th><th>Order Total</th><th>Discount</th><th>Date</th></tr></thead>
+            <tbody id="couponUsageBody"></tbody>
+        </table></div>
+    </div>
+</div>
+
+<script>
+const csrf = "<?= $_SESSION['csrf_token'] ?? '' ?>";
+
+// ── API helper ──
+async function api(action, payload = {}) {
+    try {
+        const r = await fetch('../api/admin.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+            body: JSON.stringify({ action, ...payload })
+        });
+        return await r.json();
+    } catch(e) { return { success: false, message: 'Server error' }; }
+}
+
+// ── Modal helpers ──
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ── Tab switching ──
+function switchTab(id, el) {
+    document.querySelectorAll('.section-content').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+    (el || document.getElementById('nav-'+id)).classList.add('active');
+    if (id === 'marketing') { loadCoupons(); }
+    if (id === 'orders') loadOrders();
+    if (id === 'users') loadUsers();
+    if (id === 'partners') loadPartners();
+    if (id === 'returns') loadReturns('all');
+}
+
+// ── Status badge ──
+function statusBadge(s) {
+    const map = { pending:'b-amber', in_process:'b-blue', picked_up:'b-blue',
+                  out_for_delivery:'b-purple', delivered:'b-green', cancelled:'b-red' };
+    return `<span class="badge ${map[s]||'b-gray'}">${s.replace(/_/g,' ').toUpperCase()}</span>`;
+}
+
+// ─────────────────────────────
+// OVERVIEW
+// ─────────────────────────────
+async function loadStats() {
+    const d = await api('get_stats');
+    if (!d.success) return;
+    document.getElementById('sRevenue').textContent      = '₹' + d.total_revenue;
+    document.getElementById('sPending').textContent      = '₹' + d.revenue;
+    document.getElementById('sOrders').textContent       = d.orders;
+    document.getElementById('sTotalOrders').textContent  = d.total_orders;
+    document.getElementById('sUsers').textContent        = d.users;
+    document.getElementById('sPartners').textContent     = d.partners;
+    document.getElementById('sReturns').textContent      = d.pending_returns;
+
+    const rb = document.getElementById('returnsBadge');
+    if (d.pending_returns > 0) { rb.textContent = d.pending_returns; rb.style.display = 'inline'; }
+    else rb.style.display = 'none';
+}
+
+let revChart, distChart, ordChart;
+async function loadAnalytics() {
+    const d = await api('get_analytics');
+    if (!d.success) return;
+
+    if (revChart) revChart.destroy();
+    revChart = new Chart(document.getElementById('revenueChart'), {
+        type: 'line',
+        data: {
+            labels: d.revenue.map(x => x.month),
+            datasets: [{ label: 'Revenue (₹)', data: d.revenue.map(x => x.total),
+                borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.1)', fill: true, tension: 0.4, pointRadius: 5 }]
+        },
+        options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+    });
+
+    if (distChart) distChart.destroy();
+    const cols = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4'];
+    distChart = new Chart(document.getElementById('distChart'), {
+        type: 'doughnut',
+        data: { labels: d.distribution.map(x => x.status.replace(/_/g,' ')), datasets: [{ data: d.distribution.map(x => x.count), backgroundColor: cols }] },
+        options: { responsive: true, cutout: '65%' }
+    });
+
+    if (ordChart) ordChart.destroy();
+    ordChart = new Chart(document.getElementById('ordersChart'), {
+        type: 'bar',
+        data: {
+            labels: d.order_trends.map(x => x.month),
+            datasets: [{ label: 'Orders', data: d.order_trends.map(x => x.count),
+                backgroundColor: 'rgba(99,102,241,0.7)', borderRadius: 6 }]
+        },
+        options: { responsive: true, plugins: { legend: { display: false } } }
+    });
+}
+
+function refreshAll() { loadStats(); loadAnalytics(); }
+
+// ─────────────────────────────
+// CUSTOMERS
+// ─────────────────────────────
+async function loadUsers() {
+    const tbody = document.getElementById('usersBody');
+    const search = document.getElementById('userSearch').value;
+    tbody.innerHTML = '<tr><td colspan="9"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr>';
+    const d = await api('get_users', { search });
+    if (!d.success || !d.users.length) {
+        tbody.innerHTML = '<tr><td colspan="9"><div class="no-data"><i class="material-icons-outlined">people_outline</i>No customers found.</div></td></tr>';
+        return;
+    }
+    tbody.innerHTML = d.users.map(u => `
+        <tr>
+            <td><strong>#${u.id}</strong></td>
+            <td>${u.name || '<span style="color:#94a3b8">—</span>'}</td>
+            <td>${u.phone}</td>
+            <td style="font-size:0.82rem">${u.email || '—'}</td>
+            <td><strong>${u.total_orders}</strong></td>
+            <td>₹${parseFloat(u.total_spent||0).toFixed(0)}</td>
+            <td style="font-size:0.8rem">${new Date(u.created_at).toLocaleDateString()}</td>
+            <td>${u.is_blocked ? '<span class="badge b-red">Blocked</span>' : '<span class="badge b-green">Active</span>'}</td>
+            <td>
+                <div class="action-btns">
+                    <button class="btn-sm btn-outline" onclick="viewUserOrders(${u.id},'${(u.name||'User').replace(/'/g,'')}')" title="View Orders">📋 Orders</button>
+                    <button class="btn-sm ${u.is_blocked ? 'btn-success' : 'btn-amber'}" onclick="toggleBlockUser(${u.id})">${u.is_blocked ? 'Unblock' : 'Block'}</button>
+                    <button class="btn-sm btn-danger" onclick="deleteUser(${u.id},'${(u.name||'User').replace(/'/g,'')}')">🗑 Delete</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function viewUserOrders(userId, name) {
+    document.getElementById('userOrdersTitle').textContent = `Orders — ${name}`;
+    document.getElementById('userOrdersBody').innerHTML = '<tr><td colspan="5">Loading…</td></tr>';
+    openModal('userOrdersModal');
+    const d = await api('get_user_orders', { user_id: userId });
+    if (!d.success || !d.orders.length) {
+        document.getElementById('userOrdersBody').innerHTML = '<tr><td colspan="5"><div class="no-data">No orders found.</div></td></tr>';
+        return;
+    }
+    document.getElementById('userOrdersBody').innerHTML = d.orders.map(o => `
+        <tr><td>#${o.id}</td><td>₹${o.total_amount}</td><td>${statusBadge(o.status)}</td><td>${o.delivery_name||'—'}</td><td>${new Date(o.created_at).toLocaleDateString()}</td></tr>
+    `).join('');
+}
+
+async function toggleBlockUser(userId) {
+    const d = await api('toggle_block_user', { user_id: userId });
+    if (d.success) loadUsers(); else alert(d.message);
+}
+
+async function deleteUser(userId, name) {
+    if (!confirm(`PERMANENTLY delete customer "${name}" and ALL their orders & data?\n\nThis cannot be undone.`)) return;
+    const d = await api('delete_user', { user_id: userId });
+    if (d.success) { loadUsers(); loadStats(); } else alert(d.message);
+}
+
+// ─────────────────────────────
+// ORDERS
+// ─────────────────────────────
+async function loadOrders() {
+    const tbody = document.getElementById('ordersBody');
+    const search = document.getElementById('orderSearch').value;
+    const filter = document.getElementById('orderFilter').value;
+    tbody.innerHTML = '<tr><td colspan="7"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr>';
+    const d = await api('get_all_orders', { search, filter });
+    if (!d.success || !d.orders.length) {
+        tbody.innerHTML = '<tr><td colspan="7"><div class="no-data"><i class="material-icons-outlined">inbox</i>No orders found.</div></td></tr>';
+        return;
+    }
+    const partners = d.delivery_partners;
+    const partnerOpts = '<option value="">Assign partner…</option>' + partners.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+
+    tbody.innerHTML = d.orders.map(o => {
+        const assignable = !['delivered','cancelled'].includes(o.status);
+        const statusOpts = ['pending','picked_up','in_process','out_for_delivery','delivered','cancelled']
+            .map(s => `<option value="${s}" ${o.status===s?'selected':''}>${s.replace(/_/g,' ')}</option>`).join('');
+        return `<tr>
+            <td><strong>#${o.id}</strong></td>
+            <td><div style="font-weight:600">${o.customer_name||'N/A'}</div><div style="font-size:0.78rem;color:#64748b">${o.customer_phone||''}</div></td>
+            <td>₹${o.total_amount}</td>
+            <td>${statusBadge(o.status)}</td>
+            <td>
+                ${assignable ? `<select onchange="assignOrder(${o.id},this.value)" style="font-size:0.8rem;padding:4px 8px;border:1.5px solid #e2e8f0;border-radius:8px;cursor:pointer;">
+                    ${partnerOpts.replace(`value="${o.delivery_id}"`,`value="${o.delivery_id}" selected`)}
+                </select>` : (o.delivery_name||'—')}
+            </td>
+            <td style="font-size:0.8rem">${new Date(o.created_at).toLocaleDateString()}</td>
+            <td>
+                <div class="action-btns">
+                    ${assignable ? `<select onchange="changeStatus(${o.id},this)" style="font-size:0.78rem;padding:3px 6px;border:1.5px solid #e2e8f0;border-radius:7px;">${statusOpts}</select>` : ''}
+                    ${!['delivered','cancelled'].includes(o.status) ? `<button class="btn-sm btn-danger" onclick="cancelOrder(${o.id})">Cancel</button>` : ''}
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+async function assignOrder(orderId, deliveryId) {
+    if (!deliveryId) return;
+    const d = await api('assign_order', { order_id: orderId, delivery_id: deliveryId });
+    if (!d.success) alert(d.message);
+    loadOrders();
+}
+
+async function changeStatus(orderId, sel) {
+    const newStatus = sel.value;
+    const d = await api('update_order_status', { order_id: orderId, status: newStatus });
+    if (!d.success) { alert(d.message); loadOrders(); } else loadStats();
+}
+
+async function cancelOrder(orderId) {
+    if (!confirm(`Cancel Order #${orderId}? This cannot be undone.`)) return;
+    const d = await api('cancel_order', { order_id: orderId });
+    if (d.success) { loadOrders(); loadStats(); } else alert(d.message);
+}
+
+// ─────────────────────────────
+// PARTNERS
+// ─────────────────────────────
+async function loadPartners() {
+    const c = document.getElementById('partnersContainer');
+    c.innerHTML = '<div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div>';
+    const d = await api('get_partners');
+    if (!d.success || !d.partners.length) {
+        c.innerHTML = '<div class="no-data"><i class="material-icons-outlined">local_shipping</i>No partners yet. Add one!</div>';
+        return;
+    }
+    c.innerHTML = d.partners.map(p => `
+        <div class="partner-card">
+            <div class="partner-avatar">${(p.name||'?')[0].toUpperCase()}</div>
+            <div class="partner-info">
+                <h4>${p.name}</h4>
+                <p>📞 ${p.phone} &nbsp;|&nbsp; OTP: <code style="background:#f1f5f9;padding:1px 5px;border-radius:4px">${p.dummy_otp||'—'}</code></p>
+            </div>
+            <div class="partner-stats">
+                <span>📦 ${p.total_assignments} assignments</span>
+                <span>✅ ${p.completed} delivered</span>
+                <span>🔄 ${p.active} active</span>
+            </div>
+            <div class="action-btns" style="margin-left:1rem;">
+                <button class="btn-sm btn-outline" onclick="viewPartnerActivity(${p.id},'${p.name.replace(/'/g,'')}')">Activity</button>
+                <button class="btn-sm btn-amber" onclick="openEditPartner(${p.id},'${p.name.replace(/'/g,'')}')">Edit</button>
+                <button class="btn-sm btn-danger" onclick="deletePartner(${p.id},'${p.name.replace(/'/g,'')}')">Delete</button>
+            </div>
         </div>
-    </div>
-    
-    <script>
-        const csrfToken = "<?= $_SESSION['csrf_token'] ?? '' ?>";
+    `).join('');
+}
 
-        function switchTab(tabId) {
-            document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
-            event.currentTarget.classList.add('active');
-            document.querySelectorAll('.section-content').forEach(el => el.classList.remove('active'));
-            document.getElementById(tabId).classList.add('active');
-        }
+function openEditPartner(id, name) {
+    document.getElementById('editPartnerId').value = id;
+    document.getElementById('editPName').value = name;
+    document.getElementById('editPOtp').value = '';
+    openModal('editPartnerModal');
+}
 
-        document.getElementById('logoutBtn').addEventListener('click', async (e) => {
-            e.preventDefault();
-            await fetch('../api/auth.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
-                body: JSON.stringify({ action: 'logout' })
-            });
-            window.location.href = '../index.php';
-        });
-        document.addEventListener('DOMContentLoaded', () => {
-            loadStats();
-            loadUsers();
-            loadOrders();
-            loadPartners();
-            loadReturns();
-            loadAnalytics();
-        });
+async function viewPartnerActivity(id, name) {
+    document.getElementById('partnerActivityTitle').textContent = `Activity — ${name}`;
+    document.getElementById('partnerActivityBody').innerHTML = '<tr><td colspan="6">Loading…</td></tr>';
+    openModal('partnerActivityModal');
+    const d = await api('get_partner_stats', { partner_id: id });
+    if (!d.success || !d.orders.length) {
+        document.getElementById('partnerActivityBody').innerHTML = '<tr><td colspan="6"><div class="no-data">No activity yet.</div></td></tr>';
+        return;
+    }
+    document.getElementById('partnerActivityBody').innerHTML = d.orders.map(o => `
+        <tr><td>#${o.id}</td><td>${o.customer_name}</td><td>${o.phone}</td><td>₹${o.total_amount}</td><td>${statusBadge(o.status)}</td><td>${new Date(o.created_at).toLocaleDateString()}</td></tr>
+    `).join('');
+}
 
-        async function loadAnalytics() {
-            const data = await apiCall('get_analytics');
-            if (data.success) {
-                renderRevenueChart(data.revenue);
-                renderDistributionChart(data.distribution);
-            }
-        }
+async function deletePartner(id, name) {
+    if (!confirm(`Remove delivery partner "${name}"?\nTheir existing order records will be preserved.`)) return;
+    const d = await api('delete_delivery_partner', { partner_id: id });
+    if (d.success) { loadPartners(); loadStats(); } else alert(d.message);
+}
 
-        function renderRevenueChart(revenueData) {
-            const ctx = document.getElementById('revenueChart').getContext('2d');
-            new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: revenueData.map(d => d.month),
-                    datasets: [{
-                        label: 'Revenue (₹)',
-                        data: revenueData.map(d => d.total),
-                        borderColor: '#4f46e5',
-                        backgroundColor: 'rgba(79, 70, 229, 0.1)',
-                        fill: true,
-                        tension: 0.4
-                    }]
-                },
-                options: { responsive: true, plugins: { legend: { display: false } } }
-            });
-        }
+document.getElementById('addPartnerForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('btnAddPartner');
+    const msg = document.getElementById('addPartnerMsg');
+    const phone = document.getElementById('pPhone').value.replace(/\D/g,'');
+    if (phone.length !== 10) { msg.textContent='Phone must be 10 digits'; msg.style.color='#ef4444'; msg.style.display='block'; return; }
+    btn.textContent = 'Saving…'; btn.disabled = true;
+    const d = await api('create_delivery_partner', { name: document.getElementById('pName').value, phone, otp: document.getElementById('pOtp').value });
+    msg.textContent = d.message; msg.style.color = d.success ? '#10b981' : '#ef4444'; msg.style.display = 'block';
+    btn.textContent = 'Save Partner'; btn.disabled = false;
+    if (d.success) { setTimeout(() => { closeModal('addPartnerModal'); e.target.reset(); msg.style.display='none'; loadPartners(); loadStats(); }, 1500); }
+});
 
-        function renderDistributionChart(distData) {
-            const ctx = document.getElementById('distributionChart').getContext('2d');
-            const colors = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#8b5cf6'];
-            new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: distData.map(d => d.status.toUpperCase()),
-                    datasets: [{
-                        data: distData.map(d => d.count),
-                        backgroundColor: colors.slice(0, distData.length)
-                    }]
-                },
-                options: { responsive: true, cutout: '70%' }
-            });
-        }
+document.getElementById('editPartnerForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const msg = document.getElementById('editPartnerMsg');
+    const d = await api('update_delivery_partner', { partner_id: document.getElementById('editPartnerId').value, name: document.getElementById('editPName').value, otp: document.getElementById('editPOtp').value });
+    msg.textContent = d.message; msg.style.color = d.success ? '#10b981' : '#ef4444'; msg.style.display = 'block';
+    if (d.success) setTimeout(() => { closeModal('editPartnerModal'); msg.style.display='none'; loadPartners(); }, 1200);
+});
 
-        async function loadPartners() {
-            const tbody = document.getElementById('partnersTableBody');
-            const data = await apiCall('get_partners');
-            if (data.success && data.partners.length > 0) {
-                tbody.innerHTML = data.partners.map(p => `
-                    <tr>
-                        <td>#${p.id}</td>
-                        <td>${p.name}</td>
-                        <td>${p.phone}</td>
-                        <td><code>${p.dummy_otp || 'N/A'}</code></td>
-                        <td>${new Date(p.created_at).toLocaleDateString()}</td>
-                    </tr>
-                `).join('');
-            } else {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No delivery partners found.</td></tr>';
-            }
-        }
+// ─────────────────────────────
+// RETURNS
+// ─────────────────────────────
+async function loadReturns(filter = 'all', chipEl = null) {
+    if (chipEl) { document.querySelectorAll('.filter-chips .chip').forEach(c => c.classList.remove('active')); chipEl.classList.add('active'); }
+    const tbody = document.getElementById('returnsBody');
+    tbody.innerHTML = '<tr><td colspan="8"><div class="no-data">Loading…</div></td></tr>';
+    const d = await api('get_returns', { filter });
+    if (!d.success || !d.returns.length) {
+        tbody.innerHTML = `<tr><td colspan="8"><div class="no-data"><i class="material-icons-outlined">assignment_turned_in</i>No ${filter === 'all' ? '' : filter} returns.</div></td></tr>`;
+        return;
+    }
+    const statusMap = { pending: 'b-amber', approved: 'b-green', declined: 'b-red' };
+    tbody.innerHTML = d.returns.map(r => `
+        <tr>
+            <td>#${r.id}</td>
+            <td><strong>${r.customer_name}</strong><br><small>${r.phone}</small></td>
+            <td>Order #${r.order_id}<br><small>₹${r.total_amount}</small></td>
+            <td style="max-width:200px;font-size:0.82rem">${r.reason}</td>
+            <td>${r.photo_url ? `<a href="../${r.photo_url}" target="_blank" class="btn-sm btn-outline">📷 View</a>` : '—'}</td>
+            <td style="font-size:0.8rem">${new Date(r.created_at).toLocaleDateString()}</td>
+            <td><span class="badge ${statusMap[r.admin_status]||'b-gray'}">${(r.admin_status||'pending').toUpperCase()}</span></td>
+            <td>
+                ${r.admin_status === 'pending' ? `
+                    <div class="action-btns">
+                        <button class="btn-sm btn-success" onclick="handleReturn(${r.id},'approved')">✓ Approve</button>
+                        <button class="btn-sm btn-danger" onclick="handleReturn(${r.id},'declined')">✗ Decline</button>
+                    </div>` : '—'}
+            </td>
+        </tr>
+    `).join('');
+}
 
-        document.getElementById('partnerForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const btn = e.target.querySelector('button[type="submit"]');
-            const msg = document.getElementById('partnerMsg');
-            btn.innerHTML = 'Saving...'; btn.disabled = true;
+async function handleReturn(id, status) {
+    if (!confirm(`${status === 'approved' ? 'Approve' : 'Decline'} this return request?`)) return;
+    const d = await api('handle_return', { return_id: id, status });
+    if (d.success) { loadReturns('all'); loadStats(); } else alert(d.message);
+}
 
-            const res = await apiCall('create_delivery_partner', {
-                name: document.getElementById('partnerName').value,
-                phone: document.getElementById('partnerPhone').value,
-                otp: document.getElementById('partnerOtp').value
-            });
+// ─────────────────────────────
+// COUPONS
+// ─────────────────────────────
+async function loadCoupons() {
+    const tbody = document.getElementById('couponsBody');
+    const statsBar = document.getElementById('couponStatsBar');
+    const d = await api('get_coupons');
+    if (!d.success) return;
+    const cs = d.coupons;
+    const active = cs.filter(c=>c.is_active==1).length;
+    const uses   = cs.reduce((s,c)=>s+parseInt(c.total_used||0),0);
+    const saved  = cs.reduce((s,c)=>s+parseFloat(c.total_discount_given||0),0);
+    statsBar.innerHTML = `
+        <div class="stat-card"><div class="label">Active Coupons</div><div class="value">${active}</div></div>
+        <div class="stat-card"><div class="label">Total Coupons</div><div class="value">${cs.length}</div></div>
+        <div class="stat-card green"><div class="label">Redemptions</div><div class="value">${uses}</div></div>
+        <div class="stat-card red"><div class="label">Discount Given</div><div class="value">₹${saved.toFixed(0)}</div></div>
+    `;
+    if (!cs.length) { tbody.innerHTML = '<tr><td colspan="10"><div class="no-data">No coupons yet.</div></td></tr>'; return; }
+    const now = new Date();
+    tbody.innerHTML = cs.map(c => {
+        const expired = c.expires_at && new Date(c.expires_at) < now;
+        return `<tr>
+            <td><strong style="font-family:monospace;letter-spacing:1px">${c.code}</strong></td>
+            <td><span class="badge ${c.discount_type==='percentage'?'b-blue':'b-purple'}">${c.discount_type==='percentage'?'%':'₹'} ${c.discount_type==='percentage'?'Percent':'Flat'}</span></td>
+            <td><strong>${c.discount_type==='percentage'?c.discount_value+'%':'₹'+c.discount_value}</strong></td>
+            <td>${c.min_order_amount>0?'₹'+c.min_order_amount:'—'}</td>
+            <td>
+                <strong>${c.total_used}</strong> / ${c.usage_limit||'∞'}
+                ${c.total_used>0?`<br><a href="javascript:void(0)" onclick="viewCouponUsage(${c.id},'${c.code}')" style="font-size:0.78rem;color:#6366f1">View history</a>`:''}
+            </td>
+            <td>${c.per_user_limit}x</td>
+            <td style="color:${parseFloat(c.total_discount_given)>0?'#dc2626':'#94a3b8'}">₹${parseFloat(c.total_discount_given||0).toFixed(2)}</td>
+            <td style="${expired?'color:#dc2626':''}">${c.expires_at?new Date(c.expires_at).toLocaleDateString()+(expired?' <span class="badge b-red">Expired</span>':''):' —'}</td>
+            <td><span class="badge ${c.is_active==1?'b-green':'b-gray'}">${c.is_active==1?'Active':'Inactive'}</span></td>
+            <td>
+                <div class="action-btns">
+                    <button class="btn-sm ${c.is_active==1?'btn-ghost':'btn-success'}" onclick="toggleCoupon(${c.id})">${c.is_active==1?'Deactivate':'Activate'}</button>
+                    <button class="btn-sm btn-danger" onclick="deleteCoupon(${c.id},'${c.code}')">Delete</button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
 
-            msg.innerText = res.message;
-            msg.style.display = 'block';
-            msg.style.color = res.success ? 'var(--secondary)' : 'var(--danger)';
-            btn.innerHTML = 'Save Partner'; btn.disabled = false;
+async function toggleCoupon(id) { const d = await api('toggle_coupon',{coupon_id:id}); if(d.success) loadCoupons(); }
+async function deleteCoupon(id, code) {
+    if (!confirm(`Delete coupon "${code}" and all its usage history?`)) return;
+    const d = await api('delete_coupon',{coupon_id:id}); if(d.success) loadCoupons(); else alert(d.message);
+}
+async function viewCouponUsage(id, code) {
+    document.getElementById('couponUsageTitle').textContent = `Usage: ${code}`;
+    document.getElementById('couponUsageBody').innerHTML = '<tr><td colspan="8">Loading…</td></tr>';
+    openModal('couponUsageModal');
+    const d = await api('get_coupon_usage',{coupon_id:id});
+    if (!d.success||!d.usages.length) { document.getElementById('couponUsageBody').innerHTML='<tr><td colspan="8"><div class="no-data">No usages recorded.</div></td></tr>'; return; }
+    document.getElementById('couponUsageBody').innerHTML = d.usages.map((u,i)=>`
+        <tr><td>${i+1}</td><td>${u.user_name||'—'}</td><td>${u.user_phone}</td><td>${u.user_email||'—'}</td>
+        <td>#${u.order_id}</td><td>₹${parseFloat(u.order_total).toFixed(2)}</td>
+        <td style="color:#dc2626;font-weight:700">−₹${parseFloat(u.discount_amount).toFixed(2)}</td>
+        <td>${new Date(u.used_at).toLocaleString()}</td></tr>
+    `).join('');
+}
 
-            if(res.success) {
-                setTimeout(() => {
-                    document.getElementById('partnerModal').style.display = 'none';
-                    msg.style.display = 'none';
-                    e.target.reset();
-                    loadPartners();
-                    loadStats();
-                }, 1500);
-            }
-        });
+document.getElementById('addCouponForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('btnCreateCoupon');
+    const msg = document.getElementById('addCouponMsg');
+    btn.textContent = 'Creating…'; btn.disabled = true;
+    const d = await api('create_coupon', {
+        code: document.getElementById('cCode').value,
+        discount_type: document.getElementById('cType').value,
+        discount_value: document.getElementById('cValue').value,
+        min_order_amount: document.getElementById('cMinOrder').value||0,
+        usage_limit: document.getElementById('cUsageLimit').value||'',
+        per_user_limit: document.getElementById('cPerUser').value||1,
+        expires_at: document.getElementById('cExpiry').value||''
+    });
+    msg.textContent = d.message; msg.style.color = d.success?'#10b981':'#ef4444'; msg.style.display='block';
+    btn.textContent = 'Create Coupon'; btn.disabled = false;
+    if (d.success) setTimeout(()=>{ closeModal('addCouponModal'); e.target.reset(); msg.style.display='none'; loadCoupons(); }, 1500);
+});
 
-        async function apiCall(action, data = {}) {
-            try {
-                const res = await fetch('../api/admin.php', {
-                    method: 'POST', 
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrfToken
-                    },
-                    body: JSON.stringify({ action, ...data })
-                });
-                return await res.json();
-            } catch (e) { console.error(e); return { success: false, message: 'Server error' }; }
-        }
+document.getElementById('pushForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('btnPush');
+    const msg = document.getElementById('pushMsg');
+    btn.textContent = 'Sending…'; btn.disabled = true;
+    const d = await api('send_notification', { title: document.getElementById('pushTitle').value, message: document.getElementById('pushMessage').value });
+    msg.textContent = d.message; msg.style.color = d.success?'#10b981':'#ef4444'; msg.style.display='block';
+    btn.textContent = 'Send Notification'; btn.disabled = false;
+    if (d.success) { e.target.reset(); setTimeout(()=>msg.style.display='none', 3000); }
+});
 
-        async function loadStats() {
-            const data = await apiCall('get_stats');
-            if (data.success) {
-                document.getElementById('statRevenue').innerText = '₹' + data.revenue;
-                document.getElementById('statOrders').innerText = data.orders;
-                document.getElementById('statUsers').innerText = data.users;
-                document.getElementById('statPartners').innerText = data.partners;
-            }
-        }
+// ── Logout ──
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+    await fetch('../api/auth.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body: JSON.stringify({action:'logout'}) });
+    window.location.href = '../index.php';
+});
 
-        async function loadUsers() {
-            const tbody = document.getElementById('usersTableBody');
-            const data = await apiCall('get_users');
-            if (data.success && data.users.length > 0) {
-                tbody.innerHTML = data.users.map(u => `
-                    <tr>
-                        <td>#${u.id}</td>
-                        <td>${u.name || '-'}</td>
-                        <td>${u.phone}</td>
-                        <td>${u.email || '-'}</td>
-                        <td>${u.shop_address || '-'}</td>
-                        <td>${new Date(u.created_at).toLocaleDateString()}</td>
-                    </tr>
-                `).join('');
-            } else {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No customers found.</td></tr>';
-            }
-        }
+// ── Close modals on overlay click ──
+document.querySelectorAll('.modal-overlay').forEach(m => {
+    m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+});
 
-        async function loadOrders() {
-            const tbody = document.getElementById('ordersTableBody');
-            const data = await apiCall('get_all_orders');
-            if (data.success && data.orders.length > 0) {
-                const partners = data.delivery_partners;
-                let partnerOptions = '<option value="">Select Partner...</option>';
-                partners.forEach(p => partnerOptions += `<option value="${p.id}">${p.name}</option>`);
-
-                tbody.innerHTML = data.orders.map(o => {
-                    let statusBadge = o.status === 'delivered' ? 'badge-success' : (o.status === 'cancelled' ? 'badge-danger' : 'badge-pending');
-                    return `
-                    <tr>
-                        <td>#${o.id}</td>
-                        <td>${o.customer_name || 'User ' + o.user_id}</td>
-                        <td><span class="badge ${statusBadge}">${o.status.replace('_', ' ').toUpperCase()}</span></td>
-                        <td>
-                            ${o.status === 'pending' || o.status === 'in_process' ? `
-                                <select class="form-control" style="padding:0.3rem;" onchange="assignOrder(${o.id}, this.value)">
-                                    ${partnerOptions.replace(`value="${o.delivery_id}"`, `value="${o.delivery_id}" selected`)}
-                                </select>
-                            ` : (o.delivery_name || 'Unassigned')}
-                        </td>
-                        <td>
-                            ${o.status !== 'cancelled' && o.status !== 'delivered' ? `
-                                <button class="btn btn-danger" style="padding:0.3rem 0.5rem; font-size:0.8rem; width:auto;" onclick="cancelOrder(${o.id})">Cancel</button>
-                            ` : '-'}
-                        </td>
-                    </tr>
-                `}).join('');
-            } else {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No orders found.</td></tr>';
-            }
-        }
-
-        async function assignOrder(orderId, deliveryId) {
-            if (!deliveryId) return;
-            const data = await apiCall('assign_order', { order_id: orderId, delivery_id: deliveryId });
-            alert(data.message);
-            loadOrders();
-        }
-
-        async function cancelOrder(orderId) {
-            if (confirm('Are you sure you want to cancel this order?')) {
-                const data = await apiCall('cancel_order', { order_id: orderId });
-                alert(data.message);
-                loadOrders();
-                loadStats();
-            }
-        }
-
-        async function loadReturns() {
-            const tbody = document.getElementById('returnsTableBody');
-            const data = await apiCall('get_returns');
-            if (data.success && data.returns.length > 0) {
-                tbody.innerHTML = data.returns.map(r => {
-                    let statusBadge = r.status === 'approved' ? 'badge-success' : (r.status === 'rejected' ? 'badge-danger' : 'badge-pending');
-                    return `
-                    <tr>
-                        <td>#${r.id}</td>
-                        <td>Order #${r.order_id} <br><small>₹${r.total_amount}</small></td>
-                        <td>${r.customer_name} <br><small>${r.phone}</small></td>
-                        <td>${r.reason} <br><a href="../${r.photo_url}" target="_blank" style="color:var(--primary); font-size:0.8rem;">View Photo</a></td>
-                        <td><span class="badge ${statusBadge}">${r.status.toUpperCase()}</span></td>
-                        <td>
-                            ${r.status === 'pending' ? `
-                                <button class="btn btn-success" style="padding:0.3rem 0.5rem; font-size:0.8rem; width:auto;" onclick="handleReturn(${r.id}, 'approved')">Approve</button>
-                                <button class="btn btn-danger" style="padding:0.3rem 0.5rem; font-size:0.8rem; width:auto; margin-top:5px;" onclick="handleReturn(${r.id}, 'rejected')">Reject</button>
-                            ` : '-'}
-                        </td>
-                    </tr>
-                `}).join('');
-            } else {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No return requests.</td></tr>';
-            }
-        }
-
-        async function handleReturn(returnId, status) {
-            if (confirm(`Are you sure you want to ${status} this request?`)) {
-                const data = await apiCall('handle_return', { return_id: returnId, status: status });
-                alert(data.message);
-                loadReturns();
-            }
-        }
-
-        // ====================== COUPON MANAGEMENT ======================
-
-        async function loadCoupons() {
-            const tbody = document.getElementById('couponsTableBody');
-            const statsBar = document.getElementById('couponStats');
-            const data = await apiCall('get_coupons');
-            if (!data.success) return;
-
-            const coupons = data.coupons;
-
-            // Stats bar
-            const totalActive = coupons.filter(c => c.is_active == 1).length;
-            const totalUsages = coupons.reduce((s, c) => s + parseInt(c.total_used || 0), 0);
-            const totalSaved  = coupons.reduce((s, c) => s + parseFloat(c.total_discount_given || 0), 0);
-            statsBar.innerHTML = `
-                <div class="glass-panel stat-card"><h3>Active Coupons</h3><div class="value" style="font-size:2rem;">${totalActive}</div></div>
-                <div class="glass-panel stat-card"><h3>Total Redemptions</h3><div class="value" style="font-size:2rem;">${totalUsages}</div></div>
-                <div class="glass-panel stat-card"><h3>Total Discount Given</h3><div class="value" style="font-size:2rem;">₹${totalSaved.toFixed(2)}</div></div>
-                <div class="glass-panel stat-card"><h3>Total Coupons</h3><div class="value" style="font-size:2rem;">${coupons.length}</div></div>
-            `;
-
-            if (coupons.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:2rem; color:#94a3b8;">No coupons yet. Click "+ Create New Coupon" to add one.</td></tr>';
-                return;
-            }
-
-            tbody.innerHTML = coupons.map(c => {
-                const isActive = c.is_active == 1;
-                const usageDisplay = c.usage_limit ? `${c.total_used} / ${c.usage_limit}` : `${c.total_used} / ∞`;
-                const expiryDisplay = c.expires_at ? new Date(c.expires_at).toLocaleString() : '—';
-                const expiryWarning = c.expires_at && new Date(c.expires_at) < new Date() ? ' style="color:var(--danger)"' : '';
-                const discountDisplay = c.discount_type === 'percentage' ? `${c.discount_value}%` : `₹${c.discount_value}`;
-                const minDisplay = c.min_order_amount > 0 ? `₹${c.min_order_amount}` : 'None';
-
-                return `<tr>
-                    <td><strong style="font-family:monospace; font-size:1rem; letter-spacing:1px;">${c.code}</strong></td>
-                    <td><span class="badge ${c.discount_type === 'percentage' ? 'badge-info' : 'badge-success'}">${c.discount_type === 'percentage' ? 'Percent' : 'Flat'}</span></td>
-                    <td><strong>${discountDisplay}</strong></td>
-                    <td>${minDisplay}</td>
-                    <td>
-                        <span style="font-weight:600;">${usageDisplay}</span>
-                        ${c.total_used > 0 ? `<br><small><a href="javascript:void(0)" onclick="viewCouponUsage(${c.id}, '${c.code}')" style="color:var(--primary);">View History</a></small>` : ''}
-                    </td>
-                    <td>${c.per_user_limit}x</td>
-                    <td style="color: ${parseFloat(c.total_discount_given) > 0 ? 'var(--danger)' : '#94a3b8'};">₹${parseFloat(c.total_discount_given || 0).toFixed(2)}</td>
-                    <td${expiryWarning}>${expiryDisplay}</td>
-                    <td>
-                        <span class="badge ${isActive ? 'badge-success' : 'badge-danger'}">${isActive ? 'Active' : 'Inactive'}</span>
-                    </td>
-                    <td style="white-space:nowrap;">
-                        <button class="btn ${isActive ? 'btn-outline' : 'btn-success'}" style="padding:0.3rem 0.6rem; font-size:0.78rem; width:auto;" onclick="toggleCoupon(${c.id})">
-                            ${isActive ? 'Deactivate' : 'Activate'}
-                        </button>
-                        <button class="btn btn-danger" style="padding:0.3rem 0.6rem; font-size:0.78rem; width:auto; margin-top:3px;" onclick="deleteCoupon(${c.id}, '${c.code}')">
-                            Delete
-                        </button>
-                    </td>
-                </tr>`;
-            }).join('');
-        }
-
-        async function toggleCoupon(couponId) {
-            const res = await apiCall('toggle_coupon', { coupon_id: couponId });
-            if (res.success) loadCoupons();
-            else alert(res.message);
-        }
-
-        async function deleteCoupon(couponId, code) {
-            if (!confirm(`Delete coupon "${code}"? This will also remove all usage history.`)) return;
-            const res = await apiCall('delete_coupon', { coupon_id: couponId });
-            if (res.success) loadCoupons();
-            else alert(res.message);
-        }
-
-        async function viewCouponUsage(couponId, code) {
-            document.getElementById('usageDrawerTitle').innerText = `Usage History: ${code}`;
-            document.getElementById('usageDrawerMeta').innerText = 'Loading...';
-            document.getElementById('usageTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding:1.5rem;">Loading...</td></tr>';
-            document.getElementById('usageDrawer').style.display = 'flex';
-
-            const res = await apiCall('get_coupon_usage', { coupon_id: couponId });
-            if (!res.success) {
-                document.getElementById('usageDrawerMeta').innerText = res.message;
-                return;
-            }
-
-            const usages = res.usages;
-            document.getElementById('usageDrawerMeta').innerText = `${usages.length} redemption(s) found for coupon "${code}"`;
-
-            if (usages.length === 0) {
-                document.getElementById('usageTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center; color:#94a3b8; padding:2rem;">No usages recorded yet.</td></tr>';
-                return;
-            }
-
-            document.getElementById('usageTableBody').innerHTML = usages.map((u, i) => `
-                <tr>
-                    <td>${i + 1}</td>
-                    <td><strong>${u.user_name || '—'}</strong></td>
-                    <td>${u.user_phone}</td>
-                    <td>${u.user_email || '—'}</td>
-                    <td>#${u.order_id}</td>
-                    <td>₹${parseFloat(u.order_total).toFixed(2)}</td>
-                    <td style="color:var(--danger); font-weight:600;">−₹${parseFloat(u.discount_amount).toFixed(2)}</td>
-                    <td>${new Date(u.used_at).toLocaleString()}</td>
-                </tr>
-            `).join('');
-        }
-
-        document.getElementById('couponForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const btn = document.getElementById('btnCreateCoupon');
-            const msg = document.getElementById('couponFormMsg');
-            btn.innerHTML = 'Creating...'; btn.disabled = true;
-            msg.style.display = 'none';
-
-            const res = await apiCall('create_coupon', {
-                code:             document.getElementById('couponCode').value,
-                discount_type:    document.getElementById('couponType').value,
-                discount_value:   document.getElementById('couponValue').value,
-                min_order_amount: document.getElementById('couponMinOrder').value || 0,
-                usage_limit:      document.getElementById('couponUsageLimit').value || '',
-                per_user_limit:   document.getElementById('couponPerUser').value || 1,
-                expires_at:       document.getElementById('couponExpiry').value || ''
-            });
-
-            msg.innerText = res.message;
-            msg.style.display = 'block';
-            msg.style.color = res.success ? 'var(--secondary)' : 'var(--danger)';
-            btn.innerHTML = 'Create Coupon'; btn.disabled = false;
-
-            if (res.success) {
-                setTimeout(() => {
-                    document.getElementById('couponFormPanel').style.display = 'none';
-                    document.getElementById('couponForm').reset();
-                    msg.style.display = 'none';
-                    loadCoupons();
-                }, 1500);
-            }
-        });
-
-        // Load coupons when marketing tab is opened
-        const originalSwitchTab = window.switchTab;
-        function switchTab(tabId) {
-            document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
-            event.currentTarget.classList.add('active');
-            document.querySelectorAll('.section-content').forEach(el => el.classList.remove('active'));
-            document.getElementById(tabId).classList.add('active');
-            if (tabId === 'marketing') loadCoupons();
-        }
-
-        document.getElementById('pushForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const btn = document.getElementById('btnPush');
-            const msg = document.getElementById('pushResponse');
-            btn.innerHTML = 'Sending...'; btn.disabled = true; msg.style.display = 'none';
-
-            const data = await apiCall('send_notification', {
-                title: document.getElementById('pushTitle').value,
-                message: document.getElementById('pushMessage').value
-            });
-
-            msg.innerText = data.message;
-            msg.style.display = 'block';
-            msg.style.color = data.success ? 'var(--secondary)' : 'var(--danger)';
-            btn.innerHTML = 'Send Push Notification'; btn.disabled = false;
-
-            if(data.success) document.getElementById('pushForm').reset();
-        });
-    </script>
+// ── Initial Load ──
+document.addEventListener('DOMContentLoaded', () => {
+    loadStats();
+    loadAnalytics();
+});
+</script>
 </body>
 </html>

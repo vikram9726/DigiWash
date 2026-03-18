@@ -139,8 +139,13 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'delivery') {
             <p style="font-size: 0.9rem; margin-bottom: 1rem; color:var(--danger);">Use only if customer is unavailable and authorizing staff.</p>
             <input type="hidden" id="bypassOrderId">
             
-            <label style="font-size: 0.8rem; font-weight: 600;">Staff Contact Number</label>
-            <input type="text" id="bypassStaffNum" class="form-control" placeholder="e.g. 9876543210" style="margin-bottom: 1rem;">
+            <label style="font-size: 0.8rem; font-weight: 600;">Staff Contact Number <small style="color:#94a3b8;">(10 digits)</small></label>
+            <input type="tel" id="bypassStaffNum" class="form-control"
+                placeholder="e.g. 9876543210"
+                maxlength="10"
+                inputmode="numeric"
+                oninput="this.value=this.value.replace(/[^0-9]/g,'').substring(0,10)"
+                style="margin-bottom: 1rem;">
             
             <label style="font-size: 0.8rem; font-weight: 600;">Capture Staff/Shop Photo</label>
             <input type="file" id="bypassPhoto" accept="image/*" capture="environment" class="form-control" style="margin-bottom: 1rem;">

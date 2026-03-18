@@ -189,8 +189,16 @@ if (isset($_SESSION['user_id'])) {
                     <div class="form-group" style="text-align: left;">
                         <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 12px; background: rgba(255, 255, 255, 0.9); overflow: hidden; transition: border-color 0.3s ease;">
                             <span style="padding: 1rem 1.2rem; background: #f8fafc; border-right: 2px solid #cbd5e1; font-weight: 700; color: #475569; font-size: 1.1rem;">+91</span>
-                            <input type="tel" id="phone" name="phone" placeholder="Enter Mobile Number" required pattern="[0-9]{10}" title="Please enter a valid 10-digit number" style="flex: 1; border: none; padding: 1rem 1.2rem; font-size: 1.1rem; outline: none; background: transparent; min-width: 0;">
+                            <input type="tel" id="phone" name="phone" placeholder="Enter 10-digit Mobile Number"
+                                required
+                                maxlength="10"
+                                pattern="[0-9]{10}"
+                                inputmode="numeric"
+                                title="Please enter a valid 10-digit mobile number"
+                                oninput="this.value=this.value.replace(/[^0-9]/g,'').substring(0,10)"
+                                style="flex: 1; border: none; padding: 1rem 1.2rem; font-size: 1.1rem; outline: none; background: transparent; min-width: 0;">
                         </div>
+                        <small id="phoneHint" style="color:#94a3b8; font-size:0.8rem; display:block; margin-top:4px;">Enter 10 digits without country code</small>
                     </div>
                     <!-- Firebase Recaptcha Container -->
                     <div id="recaptcha-container" style="margin-bottom: 1rem;"></div>
@@ -277,7 +285,16 @@ if (isset($_SESSION['user_id'])) {
         // Phone Auth - Send OTP
         document.getElementById('phoneLoginForm').addEventListener('submit', (e) => {
             e.preventDefault();
-            const phone = '+91' + document.getElementById('phone').value;
+            const rawPhone = document.getElementById('phone').value.replace(/\D/g, '');
+            if (rawPhone.length !== 10) {
+                showError('Please enter a valid 10-digit mobile number.');
+                return;
+            }
+            if (!/^[6-9]/.test(rawPhone)) {
+                showError('Mobile number must start with 6, 7, 8, or 9.');
+                return;
+            }
+            const phone = '+91' + rawPhone;
             const btnElement = document.getElementById('loginBtn');
             const originalText = btnElement.innerHTML;
             

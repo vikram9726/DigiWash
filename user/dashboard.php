@@ -340,8 +340,13 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
                             <textarea id="p_address" class="form-control" rows="3" required><?= htmlspecialchars($user['shop_address'] ?? '') ?></textarea>
                         </div>
                         <div class="form-group">
-                            <label>Alternate Contact (For Staff)</label>
-                            <input type="text" id="p_alt" class="form-control" value="<?= htmlspecialchars($user['alt_contact'] ?? '') ?>">
+                            <label>Alternate Contact <small style="color:#94a3b8;">(Optional, 10 digits)</small></label>
+                            <input type="tel" id="p_alt" class="form-control"
+                                value="<?= htmlspecialchars($user['alt_contact'] ?? '') ?>"
+                                maxlength="10"
+                                inputmode="numeric"
+                                placeholder="e.g. 9876543210"
+                                oninput="this.value=this.value.replace(/[^0-9]/g,'').substring(0,10)">
                         </div>
                         
                         <button type="submit" class="btn btn-primary" id="saveProfileBtn">Save Details</button>

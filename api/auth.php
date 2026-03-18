@@ -138,10 +138,13 @@ if ($action === 'firebase_login') {
 
 if ($action === 'dummy_login') {
     $phone = preg_replace('/[^0-9]/', '', $data['phone'] ?? '');
-    $otp = preg_replace('/[^0-9A-Za-z]/', '', $data['otp'] ?? '');
+    $otp   = preg_replace('/[^0-9A-Za-z]/', '', $data['otp'] ?? '');
 
     if (empty($phone) || empty($otp)) {
         respond(false, 'Phone and OTP are required.');
+    }
+    if (strlen($phone) !== 10) {
+        respond(false, 'Phone number must be exactly 10 digits.');
     }
 
     $user = null;

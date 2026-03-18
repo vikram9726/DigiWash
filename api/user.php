@@ -27,30 +27,25 @@ if (!hash_equals($_SESSION['csrf_token'], $csrfToken)) {
 }
 
 if ($action === 'update_profile') {
-    $name = htmlspecialchars(strip_tags($data['name'] ?? ''), ENT_QUOTES, 'UTF-8');
-    $email = filter_var($data['email'] ?? '', FILTER_SANITIZE_EMAIL);
+    $name       = htmlspecialchars(strip_tags($data['name'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $email      = filter_var($data['email'] ?? '', FILTER_SANITIZE_EMAIL);
     $shopAddress = htmlspecialchars(strip_tags($data['shop_address'] ?? ''), ENT_QUOTES, 'UTF-8');
-    $altContact = htmlspecialchars(strip_tags($data['alt_contact'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $altContact = preg_replace('/[^0-9]/', '', $data['alt_contact'] ?? ''); // digits only
 
-    if (empty($name) || empty($shopAddress)) {
-        respond(false, 'Name and Shop Address are required.');
+    if (empty($name)) {
+        respond(false, 'Full name is required.');
+    }
+    if (empty($shopAddress)) {
+        respond(false, 'Shop address is required.');
+    }
+    // Validate alt_contact only if provided
+    if (!empty($altContact) && strlen($altContact) !== 10) {
+        respond(false, 'Alternate contact must be exactly 10 digits.');
     }
 
-    // Orders with Customer info
-    $stmt = $pdo->prepare("SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC");
-    $stmt->execute([$userId]);
-    $orders = $stmt->fetchAll();
-
-    // Latest Profile Info from users table
-    $stmt = $pdo->prepare("SELECT name, phone, email, shop_address, qr_code_hash FROM users WHERE id = ?");
-    $stmt->execute([$userId]);
-    $user = $stmt->fetch();
-    // Check if the user is allowed to edit address (No ongoing payments logic - simplified here)
-    // We update the data
     try {
         $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, shop_address = ?, alt_contact = ? WHERE id = ?");
-        $stmt->execute([$name, $email, $shopAddress, $altContact, $userId]);
-        
+        $stmt->execute([$name, $email, $shopAddress, $altContact ?: null, $userId]);
         respond(true, 'Profile updated successfully!');
     } catch (\Exception $e) {
         respond(false, 'Failed to update profile. Error: ' . $e->getMessage());
