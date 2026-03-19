@@ -145,9 +145,52 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
             color: var(--primary);
             font-weight: 700;
         }
+        /* ── Toast Notification ── */
+        #toast-container { position:fixed; top:1.5rem; right:1.5rem; z-index:99999; display:flex; flex-direction:column; gap:10px; pointer-events:none; }
+        .toast { display:flex; align-items:flex-start; gap:12px; background:white; border-radius:14px; padding:1rem 1.2rem; box-shadow:0 8px 30px rgba(0,0,0,0.15); min-width:280px; max-width:380px; pointer-events:all; animation:toastIn 0.3s ease; border-left:4px solid #6366f1; }
+        .toast.success { border-left-color:#10b981; }
+        .toast.error   { border-left-color:#ef4444; }
+        .toast.info    { border-left-color:#3b82f6; }
+        .toast-icon { font-size:1.4rem; flex-shrink:0; margin-top:1px; }
+        .toast-body { flex:1; }
+        .toast-title { font-weight:800; font-size:0.9rem; color:#0f172a; }
+        .toast-msg   { font-size:0.82rem; color:#64748b; margin-top:2px; }
+        .toast-close { background:none; border:none; cursor:pointer; color:#94a3b8; font-size:1rem; padding:0; flex-shrink:0; }
+        .toast-progress { height:3px; border-radius:2px; margin-top:8px; }
+        .toast.success .toast-progress { background:#10b981; }
+        .toast.error   .toast-progress { background:#ef4444; }
+        .toast.info    .toast-progress { background:#3b82f6; }
+        @keyframes toastIn { from{opacity:0;transform:translateX(40px)} to{opacity:1;transform:translateX(0)} }
+        @keyframes toastOut { to{opacity:0;transform:translateX(40px)} }
+
+        /* ── Product Catalog ── */
+        .product-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:1rem; margin-bottom:1.5rem; }
+        .product-card { border:2px solid #e2e8f0; border-radius:14px; overflow:hidden; cursor:pointer; transition:all 0.2s; background:white; }
+        .product-card:hover { border-color:#6366f1; box-shadow:0 4px 16px rgba(99,102,241,0.15); }
+        .product-card.has-items { border-color:#10b981; background:#f0fdf4; }
+        .product-img { width:100%; height:130px; object-fit:cover; background:#f1f5f9; display:flex; align-items:center; justify-content:center; }
+        .product-img img { width:100%; height:100%; object-fit:cover; }
+        .product-img i { font-size:3rem; color:#cbd5e1; }
+        .product-info { padding:0.8rem; }
+        .product-name { font-weight:700; font-size:0.9rem; color:#0f172a; margin-bottom:4px; }
+        .product-prices { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+        .price-chip { background:#f1f5f9; border:1.5px solid #e2e8f0; border-radius:8px; padding:3px 8px; font-size:0.75rem; font-weight:600; color:#475569; cursor:pointer; transition:all 0.15s; display:flex; align-items:center; gap:4px; }
+        .price-chip:hover { border-color:#6366f1; color:#6366f1; }
+        .price-chip.selected { background:#6366f1; color:white; border-color:#6366f1; }
+        .qty-ctrl { display:flex; align-items:center; gap:8px; margin-top:6px; }
+        .qty-btn { width:26px; height:26px; border-radius:50%; border:1.5px solid #e2e8f0; background:white; cursor:pointer; font-size:1rem; font-weight:700; display:flex; align-items:center; justify-content:center; transition:all 0.15s; }
+        .qty-btn:hover { border-color:#6366f1; color:#6366f1; }
+        .qty-val { font-weight:700; min-width:20px; text-align:center; }
+
+        /* ── Cart Summary ── */
+        .cart-summary { background:#f8fafc; border:1.5px solid #e2e8f0; border-radius:12px; padding:1rem; margin-bottom:1rem; }
+        .cart-item-row { display:flex; justify-content:space-between; align-items:center; padding:5px 0; font-size:0.875rem; border-bottom:1px solid #e2e8f0; }
+        .cart-item-row:last-child { border:none; }
+        .cart-total { display:flex; justify-content:space-between; font-size:1rem; font-weight:800; color:#0f172a; margin-top:8px; padding-top:8px; border-top:2px solid #e2e8f0; }
     </style>
 </head>
 <body>
+<div id="toast-container"></div>
 
     <nav class="navbar">
         <div class="logo">
@@ -228,33 +271,47 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
             <!-- Create Order Section -->
             <section id="orders" class="section-content">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-                    <h2>Create New Order</h2>
+                    <h2>New Order</h2>
                 </div>
 
                 <div class="glass-panel">
                     <?php if ($needsProfileSetup): ?>
                         <p style="color: var(--danger);">Please finish your profile setup before placing an order.</p>
                     <?php else: ?>
-                    <form id="orderForm">
-                        <div class="form-group">
-                            <label>Approximate Weight (in Kg) - ₹50/Kg</label>
-                            <input type="number" id="orderWeight" class="form-control" placeholder="e.g. 5" required min="1">
+                    <!-- Product Catalog -->
+                    <div id="productCatalogSection">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                            <h3 style="margin:0;">Select Services</h3>
+                            <span id="catalogLoading" style="font-size:0.85rem; color:#94a3b8;">Loading...</span>
                         </div>
-                        <div class="form-group">
-                            <label>Special Instructions (Optional)</label>
-                            <textarea id="orderInstr" class="form-control" rows="3" placeholder="e.g. Please use fabric softener."></textarea>
-                        </div>
-                        <div class="form-group">
-                            <label>Coupon Code (Optional)</label>
-                            <div style="display:flex; gap:10px;">
-                                <input type="text" id="couponCode" class="form-control" placeholder="e.g. SAVE10">
-                                <button type="button" class="btn btn-outline" style="width:auto; padding:0.5rem 1rem;" id="applyCouponBtn">Apply</button>
+                        <div class="product-grid" id="productGrid"></div>
+
+                        <!-- Cart Summary -->
+                        <div id="cartSummary" style="display:none;">
+                            <h4 style="margin-bottom:0.75rem;">🛒 Your Cart</h4>
+                            <div class="cart-summary">
+                                <div id="cartItems"></div>
+                                <div class="cart-total"><span>Total</span><span id="cartTotal">₹0</span></div>
                             </div>
-                            <small id="couponFeedback" style="display:block; margin-top:5px; font-weight:600;"></small>
                         </div>
-                        <button type="submit" class="btn btn-primary" id="submitOrderBtn">Request Pickup</button>
-                        <p id="orderMsg" style="margin-top: 1rem; font-weight: 600; display: none;"></p>
-                    </form>
+
+                        <form id="orderForm">
+                            <div class="form-group">
+                                <label>Special Instructions (Optional)</label>
+                                <textarea id="orderInstr" class="form-control" rows="2" placeholder="e.g. Use fabric softener on shirts."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Coupon Code (Optional)</label>
+                                <div style="display:flex; gap:10px;">
+                                    <input type="text" id="couponCode" class="form-control" placeholder="e.g. SAVE10" style="text-transform:uppercase;">
+                                    <button type="button" class="btn btn-outline" style="width:auto; padding:0.5rem 1rem;" id="applyCouponBtn">Apply</button>
+                                </div>
+                                <small id="couponFeedback" style="display:block; margin-top:5px; font-weight:600;"></small>
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="submitOrderBtn" disabled>Request Pickup</button>
+                            <p id="orderMsg" style="margin-top: 1rem; font-weight: 600; display: none;"></p>
+                        </form>
+                    </div>
                     <?php endif; ?>
                 </div>
             </section>
@@ -474,6 +531,7 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
             loadOrders('completed');
             loadPayments('remaining');
             loadPayments('completed');
+            loadProductCatalog();
 
             // Initialize FCM if supported
             if ('serviceWorker' in navigator && typeof firebase !== 'undefined') {
@@ -630,47 +688,175 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
             } catch(e) { container.innerHTML = 'Error Loading.'; }
         }
 
-        // Create Order Submit Logic
+        // Product Catalog & Cart State
+        let cart = {}; // { product_price_id: { product_name, size_label, price, quantity } }
+        let appliedDiscount = 0;
+
+        // ── Toast Notification System ──────────────────────────────────────────
+        function toast(type, title, message, duration = 4000) {
+            const iconMap = { success: '✅', error: '❌', info: 'ℹ️' };
+            const c = document.getElementById('toast-container');
+            const el = document.createElement('div');
+            el.className = `toast ${type}`;
+            el.innerHTML = `
+                <div class="toast-icon">${iconMap[type]||'🔔'}</div>
+                <div class="toast-body">
+                    <div class="toast-title">${title}</div>
+                    ${message ? `<div class="toast-msg">${message}</div>` : ''}
+                    <div class="toast-progress" style="width:100%; transition:width ${duration}ms linear;"></div>
+                </div>
+                <button class="toast-close" onclick="this.closest('.toast').remove()">✕</button>
+            `;
+            c.appendChild(el);
+            setTimeout(() => { const bar = el.querySelector('.toast-progress'); if(bar) bar.style.width='0'; }, 50);
+            setTimeout(() => { el.style.animation='toastOut 0.3s ease forwards'; setTimeout(()=>el.remove(), 300); }, duration);
+        }
+
+        // ── Load product catalog ──────────────────────────────────────────────
+        async function loadProductCatalog() {
+            const grid = document.getElementById('productGrid');
+            const loading = document.getElementById('catalogLoading');
+            if (!grid) return;
+            try {
+                const res = await fetch('../api/products.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                    body: JSON.stringify({ action: 'get_products', active_only: true })
+                });
+                const d = await res.json();
+                loading.style.display = 'none';
+                if (!d.success || !d.products.length) {
+                    grid.innerHTML = '<p style="color:#94a3b8; grid-column:1/-1;">No services available yet.</p>';
+                    return;
+                }
+                grid.innerHTML = d.products.map(p => {
+                    const imgHtml = p.image_url
+                        ? `<img src="../${p.image_url}" style="width:100%;height:130px;object-fit:cover;">`
+                        : `<i class="material-icons-outlined" style="font-size:3rem;color:#cbd5e1;">local_laundry_service</i>`;
+                    const priceChips = p.prices.map(pp => `
+                        <div class="price-chip" data-ppid="${pp.id}" data-price="${pp.price}" data-product="${p.id}" data-pname="${p.name.replace(/"/g,'&quot;')}" data-size="${pp.size_label}" onclick="selectPrice(this, ${pp.id}, '${p.name.replace(/'/g,'')}', '${pp.size_label}', ${pp.price})">
+                            ${pp.size_label} — ₹${pp.price}
+                        </div>
+                    `).join('');
+                    return `
+                        <div class="product-card" id="pcard-${p.id}">
+                            <div class="product-img">${imgHtml}</div>
+                            <div class="product-info">
+                                <div class="product-name">${p.name}</div>
+                                ${p.description ? `<div style="font-size:0.78rem;color:#64748b;margin-bottom:4px">${p.description}</div>` : ''}
+                                <div class="product-prices" id="prices-${p.id}">${priceChips}</div>
+                                <div class="qty-ctrl" id="qty-${p.id}" style="display:none">
+                                    <button type="button" class="qty-btn" onclick="changeQty(${p.id}, -1)">−</button>
+                                    <span class="qty-val" id="qtyval-${p.id}">1</span>
+                                    <button type="button" class="qty-btn" onclick="changeQty(${p.id}, 1)">+</button>
+                                    <button type="button" class="qty-btn" style="margin-left:auto;color:#ef4444;border-color:#ef4444;font-size:0.8rem;width:auto;padding:0 8px;border-radius:8px;" onclick="removeFromCart(${p.id})">Remove</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch(e) {
+                loading.textContent = 'Failed to load services. Please refresh.';
+            }
+        }
+
+        function selectPrice(chip, ppId, productName, sizeLabel, price) {
+            const productId = parseInt(chip.getAttribute('data-product'));
+            // Deselect other chips in same product
+            document.querySelectorAll(`#prices-${productId} .price-chip`).forEach(c => c.classList.remove('selected'));
+            chip.classList.add('selected');
+            // Update cart
+            cart[productId] = { product_price_id: ppId, product_name: productName, size_label: sizeLabel, price: parseFloat(price), quantity: parseInt(document.getElementById('qtyval-'+productId)?.textContent||1) };
+            document.getElementById('qty-'+productId).style.display = 'flex';
+            document.getElementById('pcard-'+productId).classList.add('has-items');
+            updateCartUI();
+        }
+
+        function changeQty(productId, delta) {
+            if (!cart[productId]) return;
+            const newQty = Math.max(1, cart[productId].quantity + delta);
+            cart[productId].quantity = newQty;
+            document.getElementById('qtyval-'+productId).textContent = newQty;
+            updateCartUI();
+        }
+
+        function removeFromCart(productId) {
+            delete cart[productId];
+            document.getElementById('qtyval-'+productId).textContent = 1;
+            document.getElementById('qty-'+productId).style.display = 'none';
+            document.getElementById('pcard-'+productId).classList.remove('has-items');
+            document.querySelectorAll(`#prices-${productId} .price-chip`).forEach(c => c.classList.remove('selected'));
+            updateCartUI();
+        }
+
+        function updateCartUI() {
+            const items = Object.values(cart);
+            const summaryEl = document.getElementById('cartSummary');
+            const submitBtn = document.getElementById('submitOrderBtn');
+            if (!items.length) { summaryEl.style.display='none'; submitBtn.disabled=true; return; }
+            summaryEl.style.display = 'block';
+            submitBtn.disabled = false;
+            let subtotal = 0;
+            document.getElementById('cartItems').innerHTML = items.map(it => {
+                const line = it.price * it.quantity;
+                subtotal += line;
+                return `<div class="cart-item-row"><span>${it.product_name} (${it.size_label}) × ${it.quantity}</span><span style="font-weight:700;">₹${line.toFixed(2)}</span></div>`;
+            }).join('');
+            const totalAfterDiscount = Math.max(0, subtotal - appliedDiscount);
+            if (appliedDiscount > 0) {
+                document.getElementById('cartItems').innerHTML += `<div class="cart-item-row" style="color:#10b981"><span>Coupon Discount</span><span>−₹${appliedDiscount.toFixed(2)}</span></div>`;
+            }
+            document.getElementById('cartTotal').textContent = '₹' + totalAfterDiscount.toFixed(2);
+        }
+
+        // Create Order Submit
         const orderForm = document.getElementById('orderForm');
-        if(orderForm) {
+        if (orderForm) {
             orderForm.addEventListener('submit', async(e) => {
                 e.preventDefault();
                 const btn = document.getElementById('submitOrderBtn');
-                const msg = document.getElementById('orderMsg');
-                btn.innerHTML = 'Creating...'; btn.disabled = true; msg.style.display = 'none';
+                const items = Object.values(cart);
+                if (!items.length) { toast('error','Empty Cart','Please select at least one service.'); return; }
 
-                try {
-                    const res = await fetch('../api/orders.php', {
-                        method: 'POST', 
-                        headers:{ 
-                            'Content-Type': 'application/json',
-                            'X-CSRF-Token': csrfToken
-                        },
-                        body: JSON.stringify({ 
-                            action: 'create_order', 
-                            weight: document.getElementById('orderWeight').value, 
-                            instructions: document.getElementById('orderInstr').value,
-                            coupon_code: document.getElementById('couponCode').value 
-                        })
-                    });
-                    const result = await res.json();
-                    
-                    msg.innerText = result.message;
-                    msg.style.display = 'block';
-                    msg.style.color = result.success ? 'var(--secondary)' : 'var(--danger)';
-                    btn.innerHTML = 'Request Pickup'; btn.disabled = false;
+                btn.innerHTML = 'Placing Order…'; btn.disabled = true;
 
-                    if(result.success) {
-                        fetchStats();
-                        loadHistories('ongoing');
-                        loadPayments('remaining');
-                        switchTab('history');
-                        orderForm.reset();
-                    }
-                } catch(e) {
-                    msg.innerText = "Error requesting server."; msg.style.color = "var(--danger)"; msg.style.display = 'block';
-                    btn.innerHTML = 'Request Pickup'; btn.disabled = false;
+                const payload = {
+                    action: 'create_order',
+                    items: items.map(it => ({ product_price_id: it.product_price_id, quantity: it.quantity })),
+                    instructions: document.getElementById('orderInstr').value,
+                    coupon_code: document.getElementById('couponCode').value
+                };
+
+                const res = await fetch('../api/orders.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                    body: JSON.stringify(payload)
+                });
+
+                let result;
+                try { result = await res.json(); }
+                catch { result = { success: false, message: 'Server returned an invalid response.' }; }
+
+                if (result.success) {
+                    toast('success', 'Order Placed! 🎉', result.message);
+                    // Reset
+                    cart = {}; appliedDiscount = 0;
+                    document.querySelectorAll('.price-chip').forEach(c => c.classList.remove('selected'));
+                    document.querySelectorAll('.product-card').forEach(c => c.classList.remove('has-items'));
+                    document.querySelectorAll('.qty-ctrl').forEach(c => c.style.display='none');
+                    document.querySelectorAll('.qty-val').forEach(c => c.textContent='1');
+                    document.getElementById('cartSummary').style.display='none';
+                    document.getElementById('couponCode').value='';
+                    document.getElementById('couponFeedback').textContent='';
+                    orderForm.reset();
+                    updateCartUI();
+                    fetchStats();
+                    loadHistories('ongoing');
+                    switchTab('history');
+                } else {
+                    toast('error', 'Order Failed', result.message);
                 }
+                btn.innerHTML = 'Request Pickup'; btn.disabled = false;
             });
         }
 
@@ -749,19 +935,17 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
             try {
                 const res = await fetch('../api/orders.php', { 
                     method: 'POST',
-                    headers: { 'X-CSRF-Token': csrfToken }, // Fetch handles FormData boundary automatically
+                    headers: { 'X-CSRF-Token': csrfToken },
                     body: formData 
                 });
                 const data = await res.json();
-                
                 if(data.success) {
-                    alert(data.message);
+                    toast('success','Return Submitted',data.message);
                     closeReturnModal();
                 } else {
                     msg.innerText = data.message; msg.style.display = 'block';
                 }
             } catch(e) { msg.innerText = "Error submitting request."; msg.style.display = 'block'; }
-            
             btn.innerHTML = 'Submit Request'; btn.disabled = false;
         }
     </script>

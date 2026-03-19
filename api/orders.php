@@ -52,103 +52,121 @@ if ($action === 'get_dashboard_stats') {
 
 // --- CREATE ORDER ---
 if ($action === 'create_order') {
-    $weight = (float)($data['weight'] ?? 0);
-    $instructions = htmlspecialchars(strip_tags($data['instructions'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $instructions  = htmlspecialchars(strip_tags($data['instructions'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $cartItems     = $data['items'] ?? [];    // [{product_price_id, quantity}]
+    $weight        = (float)($data['weight'] ?? 0); // fallback (legacy)
 
-    if ($weight <= 0) {
-        respond(false, 'Please enter a valid approximate weight.');
+    // Must have either cart items or weight
+    if (empty($cartItems) && $weight <= 0) {
+        respond(false, 'Please add at least one item or enter a weight.');
     }
 
-    // 1. Check if user needs profile setup
+    // 1. Check profile
     $stmt = $pdo->prepare("SELECT name, shop_address FROM users WHERE id = ?");
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
-    
     if (empty($user['name']) || empty($user['shop_address'])) {
-        respond(false, 'Please complete your profile details before creating an order.');
+        respond(false, 'Please complete your profile before creating an order.');
     }
 
-    // 2. Enforce the 4-Order Payment Lock Logic
-    // Count how many completed unpaid orders exist
+    // 2. Payment lock
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM payments p JOIN orders o ON p.order_id = o.id WHERE p.user_id = ? AND p.status = 'remaining' AND o.status = 'delivered'");
     $stmt->execute([$userId]);
-    $unpaidCompletedOrders = $stmt->fetchColumn();
-
-    // If they have 4 or more, block new orders until they pay (or lock to COD only later during payment phase)
-    if ($unpaidCompletedOrders >= 4) {
-        respond(false, 'You have reached the maximum limit of 4 unpaid delivered orders. Please clear your remaining dues to create new pay-later orders.');
-        // Note: In a full app, we might still allow them to create a strict COD order here.
+    if ($stmt->fetchColumn() >= 4) {
+        respond(false, 'You have 4 unpaid delivered orders. Please clear dues before creating new orders.');
     }
 
-        // 3. Create the Order
-        try {
-            $pdo->beginTransaction();
+    try {
+        $pdo->beginTransaction();
 
-            $pricePerKg = 50;
-            $baseAmount = $weight * $pricePerKg;
-            $discount = 0;
-            $appliedCouponId = null;
-            $couponCode = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $data['coupon_code'] ?? ''));
+        // --- Compute base amount ---
+        $baseAmount    = 0;
+        $resolvedItems = [];
 
-            if (!empty($couponCode)) {
-                $stmt = $pdo->prepare("
-                    SELECT * FROM coupons 
-                    WHERE code = ? AND is_active = 1 
-                    AND (expires_at IS NULL OR expires_at > NOW())
-                    AND min_order_amount <= ?
+        if (!empty($cartItems)) {
+            foreach ($cartItems as $item) {
+                $ppId = (int)($item['product_price_id'] ?? 0);
+                $qty  = max(1, (int)($item['quantity'] ?? 1));
+                if (!$ppId) continue;
+
+                $st = $pdo->prepare("
+                    SELECT pp.id, pp.price, pp.size_label, pp.unit, p.name as product_name, p.id as product_id
+                    FROM product_prices pp
+                    JOIN products p ON pp.product_id = p.id
+                    WHERE pp.id = ? AND p.is_active = 1
                 ");
-                $stmt->execute([$couponCode, $baseAmount]);
-                $coupon = $stmt->fetch();
+                $st->execute([$ppId]);
+                $row = $st->fetch();
+                if (!$row) continue;
 
-                if ($coupon) {
-                    // Check total usage limit
-                    if ($coupon['usage_limit'] !== null) {
-                        $totalUsed = $pdo->prepare("SELECT COUNT(*) FROM coupon_usages WHERE coupon_id = ?");
-                        $totalUsed->execute([$coupon['id']]);
-                        if ($totalUsed->fetchColumn() >= $coupon['usage_limit']) {
-                            $pdo->rollBack();
-                            respond(false, 'This coupon has reached its maximum usage limit.');
-                        }
-                    }
-                    // Check per-user limit
-                    $userUsed = $pdo->prepare("SELECT COUNT(*) FROM coupon_usages WHERE coupon_id = ? AND user_id = ?");
-                    $userUsed->execute([$coupon['id'], $userId]);
-                    if ($userUsed->fetchColumn() >= $coupon['per_user_limit']) {
-                        $pdo->rollBack();
-                        respond(false, 'You have already used this coupon the maximum number of times allowed.');
-                    }
-
-                    if ($coupon['discount_type'] === 'percentage') {
-                        $discount = $baseAmount * ($coupon['discount_value'] / 100);
-                    } else {
-                        $discount = $coupon['discount_value'];
-                    }
-                    $appliedCouponId = $coupon['id'];
-                }
+                $lineTotal      = $row['price'] * $qty;
+                $baseAmount    += $lineTotal;
+                $resolvedItems[] = [
+                    'product_id'       => $row['product_id'],
+                    'product_price_id' => $ppId,
+                    'product_name'     => $row['product_name'],
+                    'size_label'       => $row['size_label'],
+                    'price'            => $row['price'],
+                    'quantity'         => $qty,
+                    'line_total'       => $lineTotal,
+                ];
             }
-
-            $totalAmount = max(0, $baseAmount - $discount);
-
-            $stmt = $pdo->prepare("INSERT INTO orders (user_id, status, total_amount, payment_status, instructions) VALUES (?, 'pending', ?, 'remaining', ?)");
-            $stmt->execute([$userId, $totalAmount, $instructions]);
-            $orderId = $pdo->lastInsertId();
-
-            // 4. Create the corresponding Payment record
-            $stmt = $pdo->prepare("INSERT INTO payments (user_id, order_id, payment_mode, status, amount) VALUES (?, ?, 'COD', 'remaining', ?)");
-            $stmt->execute([$userId, $orderId, $totalAmount]);
-
-            // 5. Log coupon usage
-            if ($appliedCouponId) {
-                $stmt = $pdo->prepare("INSERT INTO coupon_usages (coupon_id, user_id, order_id, discount_amount) VALUES (?, ?, ?, ?)");
-                $stmt->execute([$appliedCouponId, $userId, $orderId, $discount]);
-            }
-
-            $pdo->commit();
-            respond(true, 'Order created successfully! Our delivery partner will be assigned shortly.');
-        } catch (\Exception $e) {
-            $pdo->rollBack();
-            respond(false, 'Failed to create order. Error: ' . $e->getMessage());
+            if (empty($resolvedItems)) { $pdo->rollBack(); respond(false, 'No valid items found. Please check your cart.'); }
+        } else {
+            // Weight-based fallback
+            $baseAmount = $weight * 50;
         }
+
+        // --- Coupon ---
+        $discount       = 0;
+        $appliedCouponId = null;
+        $couponCode     = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $data['coupon_code'] ?? ''));
+
+        if (!empty($couponCode)) {
+            $stmt = $pdo->prepare("SELECT * FROM coupons WHERE code = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > NOW()) AND min_order_amount <= ?");
+            $stmt->execute([$couponCode, $baseAmount]);
+            $coupon = $stmt->fetch();
+            if ($coupon) {
+                if ($coupon['usage_limit'] !== null) {
+                    $tu = $pdo->prepare("SELECT COUNT(*) FROM coupon_usages WHERE coupon_id = ?"); $tu->execute([$coupon['id']]);
+                    if ($tu->fetchColumn() >= $coupon['usage_limit']) { $pdo->rollBack(); respond(false, 'Coupon has reached max usage.'); }
+                }
+                $uu = $pdo->prepare("SELECT COUNT(*) FROM coupon_usages WHERE coupon_id = ? AND user_id = ?"); $uu->execute([$coupon['id'], $userId]);
+                if ($uu->fetchColumn() >= $coupon['per_user_limit']) { $pdo->rollBack(); respond(false, 'You have already used this coupon the max times.'); }
+                $discount        = $coupon['discount_type'] === 'percentage' ? $baseAmount * ($coupon['discount_value']/100) : $coupon['discount_value'];
+                $appliedCouponId = $coupon['id'];
+            }
+        }
+
+        $totalAmount = max(0, $baseAmount - $discount);
+
+        // --- Insert order ---
+        $stmt = $pdo->prepare("INSERT INTO orders (user_id, status, total_amount, payment_status, instructions) VALUES (?, 'pending', ?, 'remaining', ?)");
+        $stmt->execute([$userId, $totalAmount, $instructions]);
+        $orderId = $pdo->lastInsertId();
+
+        // --- Insert order items (if product-based) ---
+        if (!empty($resolvedItems)) {
+            $itmStmt = $pdo->prepare("INSERT INTO order_items (order_id, product_id, product_price_id, product_name, size_label, price, quantity, line_total) VALUES (?,?,?,?,?,?,?,?)");
+            foreach ($resolvedItems as $it) {
+                $itmStmt->execute([$orderId, $it['product_id'], $it['product_price_id'], $it['product_name'], $it['size_label'], $it['price'], $it['quantity'], $it['line_total']]);
+            }
+        }
+
+        // --- Insert payment ---
+        $pdo->prepare("INSERT INTO payments (user_id, order_id, payment_mode, status, amount) VALUES (?, ?, 'COD', 'remaining', ?)")->execute([$userId, $orderId, $totalAmount]);
+
+        // --- Coupon usage ---
+        if ($appliedCouponId) {
+            $pdo->prepare("INSERT INTO coupon_usages (coupon_id, user_id, order_id, discount_amount) VALUES (?,?,?,?)")->execute([$appliedCouponId, $userId, $orderId, $discount]);
+        }
+
+        $pdo->commit();
+        respond(true, 'Order placed! A delivery partner will be assigned soon.', ['order_id' => $orderId]);
+    } catch (\Exception $e) {
+        $pdo->rollBack();
+        respond(false, 'Failed to create order: ' . $e->getMessage());
+    }
 }
 
 // --- FETCH ORDERS ---

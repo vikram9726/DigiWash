@@ -150,6 +150,9 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             <i class="material-icons-outlined">assignment_return</i> Returns
             <span class="badge-count" id="returnsBadge" style="display:none">0</span>
         </div>
+        <div class="menu-item" id="nav-products" onclick="switchTab('products',this)">
+            <i class="material-icons-outlined">inventory_2</i> Products
+        </div>
         <div class="sidebar-section">Marketing</div>
         <div class="menu-item" id="nav-marketing" onclick="switchTab('marketing',this)">
             <i class="material-icons-outlined">campaign</i> Coupons & Notifs
@@ -396,6 +399,82 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     </div>
 </div>
 
+<!-- ══ PRODUCTS SECTION ══ -->
+<section id="products" class="section-content" style="display:none;animation:fadeUp 0.3s ease;">
+    <div class="top-bar">
+        <div class="page-title">Product <span>Catalog</span></div>
+        <button class="btn-sm btn-primary" onclick="openModal('addProductModal')">+ Add Product</button>
+    </div>
+    <div id="productsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.2rem;margin-top:1rem;"></div>
+</section>
+
+<!-- Add Product Modal -->
+<div class="modal-overlay" id="addProductModal">
+    <div class="modal-box" style="max-width:500px;">
+        <button class="modal-close" onclick="closeModal('addProductModal')">✕</button>
+        <div class="modal-title">Add New Product</div>
+        <form id="addProductForm" enctype="multipart/form-data">
+            <div class="form-group">
+                <label>Product Name *</label>
+                <input type="text" id="prdName" class="form-control" required placeholder="e.g. Shirt, Jeans, Bedsheet">
+            </div>
+            <div class="form-group">
+                <label>Description (optional)</label>
+                <input type="text" id="prdDesc" class="form-control" placeholder="e.g. Dry-cleaned and pressed">
+            </div>
+            <div class="form-group">
+                <label>Product Image (optional)</label>
+                <input type="file" id="prdImage" accept="image/*" onchange="previewImg(this,'prdPreview')">
+                <img id="prdPreview" style="display:none;max-height:120px;margin-top:8px;border-radius:10px;object-fit:cover;">
+            </div>
+            <div class="form-group">
+                <label>Pricing Tiers * <button type="button" class="btn-sm btn-outline" onclick="addPricingRow()" style="margin-left:8px;padding:2px 10px;font-size:0.78rem">+ Add Tier</button></label>
+                <div id="pricingRows">
+                    <div class="pricing-row" style="display:grid;grid-template-columns:1fr 100px 110px auto;gap:6px;align-items:center;margin-bottom:6px;">
+                        <input type="text" class="form-control pr-size" placeholder="Size / Label (e.g. Small)" style="font-size:0.85rem">
+                        <input type="number" class="form-control pr-price" placeholder="Price" min="1" style="font-size:0.85rem">
+                        <select class="form-control pr-unit" style="font-size:0.85rem;padding:0.4rem">
+                            <option>per piece</option><option>per kg</option><option>per set</option><option>per pair</option>
+                        </select>
+                        <button type="button" onclick="this.closest('.pricing-row').remove()" style="background:#fee2e2;border:none;border-radius:8px;padding:0.4rem 0.7rem;cursor:pointer;color:#dc2626;font-weight:700;flex-shrink:0;">✕</button>
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex;gap:0.75rem;margin-top:1rem;">
+                <button type="submit" class="btn-sm btn-primary btn-lg" id="btnSaveProd" style="flex:1;">Save Product</button>
+                <button type="button" class="btn-sm btn-ghost btn-lg" onclick="closeModal('addProductModal')">Cancel</button>
+            </div>
+            <div class="form-msg" id="addProductMsg"></div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Product Modal -->
+<div class="modal-overlay" id="editProductModal">
+    <div class="modal-box" style="max-width:480px;">
+        <button class="modal-close" onclick="closeModal('editProductModal')">✕</button>
+        <div class="modal-title">Edit Product — <span id="editPrdTitle"></span></div>
+        <input type="hidden" id="editPrdId">
+        <div class="form-group">
+            <label>Product Name</label>
+            <input type="text" id="editPrdName" class="form-control">
+        </div>
+        <div class="form-group">
+            <label>Description</label>
+            <input type="text" id="editPrdDesc" class="form-control">
+        </div>
+        <div class="form-group">
+            <label>Pricing Tiers <button type="button" class="btn-sm btn-outline" onclick="addEditPricingRow()" style="margin-left:8px;padding:2px 10px;font-size:0.78rem">+ Add Tier</button></label>
+            <div id="editPricingRows"></div>
+        </div>
+        <div style="display:flex;gap:0.75rem;margin-top:1rem;">
+            <button class="btn-sm btn-primary btn-lg" style="flex:1;" onclick="saveProductEdit()">Save Changes</button>
+            <button class="btn-sm btn-ghost btn-lg" onclick="closeModal('editProductModal')">Cancel</button>
+        </div>
+        <div class="form-msg" id="editProductMsg"></div>
+    </div>
+</div>
+
 <script>
 const csrf = "<?= $_SESSION['csrf_token'] ?? '' ?>";
 
@@ -421,11 +500,29 @@ function switchTab(id, el) {
     document.getElementById(id).classList.add('active');
     document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
     (el || document.getElementById('nav-'+id)).classList.add('active');
-    if (id === 'marketing') { loadCoupons(); }
+    if (id === 'marketing') loadCoupons();
     if (id === 'orders') loadOrders();
     if (id === 'users') loadUsers();
     if (id === 'partners') loadPartners();
     if (id === 'returns') loadReturns('all');
+    if (id === 'products') loadProducts();
+}
+
+// ── Toast ──
+function toast(type, title, msg, dur=4000) {
+    const icons = {success:'✅',error:'❌',info:'ℹ️'};
+    const c = document.getElementById('toast-container') || (() => {
+        const el = document.createElement('div');
+        el.id = 'toast-container';
+        Object.assign(el.style, {position:'fixed',top:'1.5rem',right:'1.5rem',zIndex:99999,display:'flex',flexDirection:'column',gap:'10px',pointerEvents:'none'});
+        document.body.appendChild(el); return el;
+    })();
+    const t = document.createElement('div');
+    t.style.cssText = 'display:flex;align-items:flex-start;gap:12px;background:white;border-radius:14px;padding:1rem 1.2rem;box-shadow:0 8px 30px rgba(0,0,0,0.15);min-width:280px;max-width:380px;pointer-events:all;animation:toastIn 0.3s ease;border-left:4px solid '+(type==='success'?'#10b981':type==='error'?'#ef4444':'#3b82f6');
+    t.innerHTML = `<span style="font-size:1.3rem">${icons[type]||'🔔'}</span><div style="flex:1"><b style="font-size:0.9rem;color:#0f172a">${title}</b>${msg?`<div style="font-size:0.82rem;color:#64748b;margin-top:2px">${msg}</div>`:''}</div><button onclick="this.parentElement.remove()" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:1rem;">✕</button>`;
+    c.appendChild(t);
+    if (!document.getElementById('toast-style')) { const s=document.createElement('style'); s.id='toast-style'; s.textContent='@keyframes toastIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}@keyframes toastOut{to{opacity:0;transform:translateX(40px)}}'; document.head.appendChild(s); }
+    setTimeout(()=>{t.style.animation='toastOut 0.3s ease forwards';setTimeout(()=>t.remove(),300);},dur);
 }
 
 // ── Status badge ──
@@ -832,6 +929,161 @@ document.getElementById('pushForm').addEventListener('submit', async e => {
     btn.textContent = 'Send Notification'; btn.disabled = false;
     if (d.success) { e.target.reset(); setTimeout(()=>msg.style.display='none', 3000); }
 });
+
+// ─────────────────────────────
+// PRODUCTS
+// ─────────────────────────────
+async function prodApi(action, payload = {}) {
+    try {
+        const r = await fetch('../api/products.php', {
+            method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+            body: JSON.stringify({ action, ...payload })
+        });
+        return await r.json();
+    } catch(e) { return { success:false, message:'Server error' }; }
+}
+
+async function loadProducts() {
+    const grid = document.getElementById('productsGrid');
+    grid.innerHTML = '<div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading...</div>';
+    const d = await prodApi('get_products', { active_only: false });
+    if (!d.success || !d.products.length) {
+        grid.innerHTML = '<div class="no-data" style="grid-column:1/-1"><i class="material-icons-outlined">inventory_2</i>No products yet. Click "Add Product" to start.</div>';
+        return;
+    }
+    grid.innerHTML = d.products.map(p => {
+        const imgHtml = p.image_url
+            ? `<img src="../${p.image_url}" style="width:100%;height:150px;object-fit:cover;border-radius:12px 12px 0 0;">`
+            : `<div style="width:100%;height:120px;background:#f1f5f9;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:center;"><i class="material-icons-outlined" style="font-size:3rem;color:#cbd5e1;">local_laundry_service</i></div>`;
+        const priceList = p.prices.map(pp =>
+            `<span style="background:#f1f5f9;border-radius:6px;padding:2px 8px;font-size:0.78rem;font-weight:600;color:#475569;">${pp.size_label} — ₹${pp.price} <em style="color:#94a3b8;font-style:normal">${pp.unit}</em></span>`
+        ).join('');
+        return `<div style="border:1.5px solid #e2e8f0;border-radius:14px;overflow:hidden;background:white;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
+            ${imgHtml}
+            <div style="padding:1rem;">
+                <div style="font-weight:800;font-size:1rem;color:#0f172a;margin-bottom:4px;">${p.name} <span class="badge ${p.is_active?'b-green':'b-gray'}" style="font-size:0.7rem;">${p.is_active?'Active':'Inactive'}</span></div>
+                ${p.description?`<div style="font-size:0.82rem;color:#64748b;margin-bottom:8px;">${p.description}</div>`:''}
+                <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:1rem;">${priceList||'<span style="color:#94a3b8;font-size:0.82rem;">No prices set</span>'}</div>
+                <div class="action-btns">
+                    <button class="btn-sm btn-outline" onclick="openEditProduct(${p.id},'${p.name.replace(/'/g,'')}','${(p.description||'').replace(/'/g,'')}', ${JSON.stringify(p.prices)})">Edit</button>
+                    <button class="btn-sm ${p.is_active?'btn-ghost':'btn-success'}" onclick="toggleProduct(${p.id})">${p.is_active?'Deactivate':'Activate'}</button>
+                    <button class="btn-sm btn-danger" onclick="deleteProduct(${p.id},'${p.name.replace(/'/g,'')}')">Delete</button>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function previewImg(input, previewId) {
+    const file = input.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => { const img = document.getElementById(previewId); img.src = e.target.result; img.style.display='block'; };
+    reader.readAsDataURL(file);
+}
+
+function addPricingRow(container = 'pricingRows', size = '', price = '', unit = 'per piece') {
+    const row = document.createElement('div');
+    row.className = 'pricing-row';
+    row.style.cssText = 'display:grid;grid-template-columns:1fr 100px 110px auto;gap:6px;align-items:center;margin-bottom:6px;';
+    row.innerHTML = `
+        <input type="text" class="form-control pr-size" placeholder="Size / Label" value="${size}" style="font-size:0.85rem">
+        <input type="number" class="form-control pr-price" placeholder="Price" min="1" value="${price}" style="font-size:0.85rem">
+        <select class="form-control pr-unit" style="font-size:0.85rem;padding:0.4rem">
+            ${['per piece','per kg','per set','per pair'].map(u=>`<option ${u===unit?'selected':''}>${u}</option>`).join('')}
+        </select>
+        <button type="button" onclick="this.closest('.pricing-row').remove()" style="background:#fee2e2;border:none;border-radius:8px;padding:0.4rem 0.7rem;cursor:pointer;color:#dc2626;font-weight:700;">✕</button>
+    `;
+    document.getElementById(container).appendChild(row);
+}
+
+function addEditPricingRow() { addPricingRow('editPricingRows'); }
+
+document.getElementById('addProductForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('btnSaveProd');
+    const msg = document.getElementById('addProductMsg');
+    const rows = document.querySelectorAll('#pricingRows .pricing-row');
+    if (!rows.length) { msg.textContent='Add at least one pricing tier.'; msg.style.color='#ef4444'; msg.style.display='block'; return; }
+
+    const prices = [];
+    for (const row of rows) {
+        const size = row.querySelector('.pr-size').value.trim();
+        const price = parseFloat(row.querySelector('.pr-price').value);
+        const unit = row.querySelector('.pr-unit').value;
+        if (!size || !price) { msg.textContent='Fill in all pricing fields.'; msg.style.color='#ef4444'; msg.style.display='block'; return; }
+        prices.push({ size_label: size, price, unit });
+    }
+
+    btn.textContent = 'Saving...'; btn.disabled = true;
+    const fd = new FormData();
+    fd.append('action','create_product');
+    fd.append('name', document.getElementById('prdName').value);
+    fd.append('description', document.getElementById('prdDesc').value);
+    fd.append('prices', JSON.stringify(prices));
+    const imgFile = document.getElementById('prdImage').files[0];
+    if (imgFile) fd.append('image', imgFile);
+
+    try {
+        const r = await fetch('../api/products.php', { method:'POST', headers:{'X-CSRF-Token':csrf}, body: fd });
+        const d = await r.json();
+        msg.textContent = d.message; msg.style.color = d.success?'#10b981':'#ef4444'; msg.style.display='block';
+        if (d.success) {
+            toast('success','Product Created',d.message);
+            setTimeout(()=>{ closeModal('addProductModal'); e.target.reset(); document.getElementById('prdPreview').style.display='none'; msg.style.display='none'; document.getElementById('pricingRows').innerHTML=''; addPricingRow(); loadProducts(); }, 1400);
+        }
+    } catch(err) { msg.textContent='Upload error.'; msg.style.color='#ef4444'; msg.style.display='block'; }
+    btn.textContent='Save Product'; btn.disabled=false;
+});
+
+function openEditProduct(id, name, desc, prices) {
+    document.getElementById('editPrdId').value = id;
+    document.getElementById('editPrdTitle').textContent = name;
+    document.getElementById('editPrdName').value = name;
+    document.getElementById('editPrdDesc').value = desc;
+    const container = document.getElementById('editPricingRows');
+    container.innerHTML = '';
+    (prices||[]).forEach(pp => addPricingRow('editPricingRows', pp.size_label, pp.price, pp.unit));
+    openModal('editProductModal');
+}
+
+async function saveProductEdit() {
+    const id   = document.getElementById('editPrdId').value;
+    const name = document.getElementById('editPrdName').value.trim();
+    const desc = document.getElementById('editPrdDesc').value.trim();
+    const msg  = document.getElementById('editProductMsg');
+    if (!name) { msg.textContent='Name required.'; msg.style.color='#ef4444'; msg.style.display='block'; return; }
+
+    // Update product meta
+    const d = await prodApi('update_product',{product_id:id,name,description:desc});
+    if (!d.success) { msg.textContent=d.message; msg.style.color='#ef4444'; msg.style.display='block'; return; }
+
+    // Handle new pricing rows (those without data-priceid attr)
+    const rows = document.querySelectorAll('#editPricingRows .pricing-row');
+    for (const row of rows) {
+        const size = row.querySelector('.pr-size').value.trim();
+        const price = parseFloat(row.querySelector('.pr-price').value);
+        const unit = row.querySelector('.pr-unit').value;
+        if (!size || !price) continue;
+        const priceId = row.getAttribute('data-priceid');
+        await prodApi('upsert_price',{price_id:priceId||0, product_id:id, size_label:size, price, unit});
+    }
+    msg.textContent='Product updated!'; msg.style.color='#10b981'; msg.style.display='block';
+    toast('success','Product Updated','');
+    setTimeout(()=>{ closeModal('editProductModal'); msg.style.display='none'; loadProducts(); }, 1200);
+}
+
+async function toggleProduct(id) {
+    const d = await prodApi('toggle_product',{product_id:id});
+    if (!d.success) { toast('error','Error',d.message); return; }
+    loadProducts();
+}
+
+async function deleteProduct(id, name) {
+    if (!confirm(`Delete product "${name}"? This will also remove its pricing tiers.`)) return;
+    const d = await prodApi('delete_product',{product_id:id});
+    if (d.success) { toast('success','Deleted',`"${name}" removed.`); loadProducts(); }
+    else toast('error','Error',d.message);
+}
 
 // ── Logout ──
 document.getElementById('logoutBtn').addEventListener('click', async () => {
