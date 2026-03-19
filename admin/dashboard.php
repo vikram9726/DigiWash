@@ -564,11 +564,13 @@ async function loadOrders() {
         return;
     }
     const partners = d.delivery_partners;
-    const partnerOpts = '<option value="">Assign partner…</option>' + partners.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    const makePartnerOpts = (selectedId) => '<option value="">Assign partner…</option>' +
+        partners.map(p => `<option value="${p.id}" ${p.id == selectedId ? 'selected' : ''}>${p.name}</option>`).join('');
 
     tbody.innerHTML = d.orders.map(o => {
         const assignable = !['delivered','cancelled'].includes(o.status);
-        const statusOpts = ['pending','picked_up','in_process','out_for_delivery','delivered','cancelled']
+        const allStatuses = ['pending','picked_up','in_process','out_for_delivery','delivered','cancelled'];
+        const statusOpts = allStatuses
             .map(s => `<option value="${s}" ${o.status===s?'selected':''}>${s.replace(/_/g,' ')}</option>`).join('');
         return `<tr>
             <td><strong>#${o.id}</strong></td>
@@ -576,14 +578,14 @@ async function loadOrders() {
             <td>₹${o.total_amount}</td>
             <td>${statusBadge(o.status)}</td>
             <td>
-                ${assignable ? `<select onchange="assignOrder(${o.id},this.value)" style="font-size:0.8rem;padding:4px 8px;border:1.5px solid #e2e8f0;border-radius:8px;cursor:pointer;">
-                    ${partnerOpts.replace(`value="${o.delivery_id}"`,`value="${o.delivery_id}" selected`)}
+                ${assignable ? `<select data-current="${o.delivery_id||''}" onchange="assignOrder(${o.id},this.value)" style="font-size:0.8rem;padding:4px 8px;border:1.5px solid #e2e8f0;border-radius:8px;cursor:pointer;">
+                    ${makePartnerOpts(o.delivery_id)}
                 </select>` : (o.delivery_name||'—')}
             </td>
             <td style="font-size:0.8rem">${new Date(o.created_at).toLocaleDateString()}</td>
             <td>
                 <div class="action-btns">
-                    ${assignable ? `<select onchange="changeStatus(${o.id},this)" style="font-size:0.78rem;padding:3px 6px;border:1.5px solid #e2e8f0;border-radius:7px;">${statusOpts}</select>` : ''}
+                    ${assignable ? `<select data-orderid="${o.id}" data-current="${o.status}" onchange="changeStatus(${o.id},this)" style="font-size:0.78rem;padding:3px 6px;border:1.5px solid #e2e8f0;border-radius:7px;">${statusOpts}</select>` : ''}
                     ${!['delivered','cancelled'].includes(o.status) ? `<button class="btn-sm btn-danger" onclick="cancelOrder(${o.id})">Cancel</button>` : ''}
                 </div>
             </td>
@@ -600,8 +602,16 @@ async function assignOrder(orderId, deliveryId) {
 
 async function changeStatus(orderId, sel) {
     const newStatus = sel.value;
+    const prev = sel.getAttribute('data-current');
+    if (newStatus === prev) return; // no change
+    if (!confirm(`Change order #${orderId} to "${newStatus.replace(/_/g,' ')}"?`)) {
+        sel.value = prev; // revert
+        return;
+    }
+    sel.setAttribute('data-current', newStatus);
     const d = await api('update_order_status', { order_id: orderId, status: newStatus });
-    if (!d.success) { alert(d.message); loadOrders(); } else loadStats();
+    if (!d.success) { alert(d.message); sel.value = prev; sel.setAttribute('data-current', prev); }
+    else loadStats();
 }
 
 async function cancelOrder(orderId) {

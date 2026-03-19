@@ -34,43 +34,84 @@ if (!hash_equals($_SESSION['csrf_token'], $csrfToken)) {
 
 // --- FETCH ASSIGNMENTS ---
 if ($action === 'get_assignments') {
-    $type = $data['type'] ?? 'pickups'; // pickups, deliveries, completed, returns
+    $type = $data['type'] ?? 'pickups';
 
     if ($type === 'pickups') {
-        // Pending pickups: Orders assigned to this delivery man, but not yet picked up
+        // Pending: assigned but not yet picked up
         $stmt = $pdo->prepare("
             SELECT o.*, u.name as customer_name, u.shop_address, u.phone 
-            FROM orders o 
-            JOIN users u ON o.user_id = u.id 
+            FROM orders o JOIN users u ON o.user_id = u.id 
             WHERE o.delivery_id = ? AND o.status = 'pending'
             ORDER BY o.created_at ASC
         ");
-    } elseif ($type === 'deliveries') {
-        // Pending deliveries: Orders ready to go back to customer
+    } elseif ($type === 'in_process') {
+        // In laundry facility after pickup
         $stmt = $pdo->prepare("
             SELECT o.*, u.name as customer_name, u.shop_address, u.phone 
-            FROM orders o 
-            JOIN users u ON o.user_id = u.id 
+            FROM orders o JOIN users u ON o.user_id = u.id 
+            WHERE o.delivery_id = ? AND o.status IN ('picked_up','in_process')
+            ORDER BY o.updated_at ASC
+        ");
+    } elseif ($type === 'deliveries') {
+        // Ready to return to customer
+        $stmt = $pdo->prepare("
+            SELECT o.*, u.name as customer_name, u.shop_address, u.phone 
+            FROM orders o JOIN users u ON o.user_id = u.id 
             WHERE o.delivery_id = ? AND o.status = 'out_for_delivery'
             ORDER BY o.updated_at ASC
         ");
     } elseif ($type === 'completed') {
-        // Delivered orders by this partner
         $stmt = $pdo->prepare("
             SELECT o.*, u.name as customer_name, u.phone as customer_phone, u.shop_address 
-            FROM orders o 
-            JOIN users u ON o.user_id = u.id 
+            FROM orders o JOIN users u ON o.user_id = u.id 
             WHERE o.delivery_id = ? AND o.status = 'delivered'
             ORDER BY o.updated_at DESC LIMIT 50
+        ");
+    } elseif ($type === 'returns') {
+        // Approved returns — partner must pick up from customer
+        $stmt = $pdo->prepare("
+            SELECT r.id as return_id, r.reason, r.photo_url, r.created_at as return_date,
+                   o.id, o.total_amount, u.name as customer_name, u.phone, u.shop_address
+            FROM returns r
+            JOIN orders o ON r.order_id = o.id
+            JOIN users u ON r.user_id = u.id
+            WHERE o.delivery_id = ? AND r.admin_status = 'approved'
+            ORDER BY r.created_at DESC
         ");
     } else {
         respond(false, 'Invalid assignment type.');
     }
-    
+
     $stmt->execute([$deliveryId]);
     $assignments = $stmt->fetchAll();
-
     respond(true, ucfirst($type) . ' fetched', ['assignments' => $assignments]);
+}
+
+// --- DELIVERY STATS ---
+if ($action === 'get_stats') {
+    $today = date('Y-m-d');
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE delivery_id = ? AND status = 'pending'");
+    $stmt->execute([$deliveryId]); $pickups = $stmt->fetchColumn();
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE delivery_id = ? AND status IN ('picked_up','in_process')");
+    $stmt->execute([$deliveryId]); $inProcess = $stmt->fetchColumn();
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE delivery_id = ? AND status = 'out_for_delivery'");
+    $stmt->execute([$deliveryId]); $outForDelivery = $stmt->fetchColumn();
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE delivery_id = ? AND status = 'delivered' AND DATE(updated_at) = ?");
+    $stmt->execute([$deliveryId, $today]); $todayDone = $stmt->fetchColumn();
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE delivery_id = ? AND status = 'delivered'");
+    $stmt->execute([$deliveryId]); $totalDone = $stmt->fetchColumn();
+
+    respond(true, 'Stats', [
+        'pickups'         => $pickups,
+        'in_process'      => $inProcess,
+        'out_for_delivery'=> $outForDelivery,
+        'today_done'      => $todayDone,
+        'total_done'      => $totalDone,
+    ]);
 }
 
 // --- FULFILL PICKUP ---
@@ -93,6 +134,33 @@ if ($action === 'fulfill_pickup') {
             respond(true, 'Pickup marked as successfully collected & sent to processing.');
         } else {
             respond(false, 'Failed to update. Order might not be assigned to you or already picked up.');
+        }
+    } catch (\Exception $e) {
+        respond(false, 'Database Error: ' . $e->getMessage());
+    }
+}
+
+// --- MARK ORDER READY FOR DELIVERY ---
+if ($action === 'mark_ready') {
+    $orderId = (int)($data['order_id'] ?? 0);
+    if (!$orderId) respond(false, 'Invalid order ID.');
+
+    try {
+        $stmt = $pdo->prepare("
+            UPDATE orders SET status = 'out_for_delivery', updated_at = NOW()
+            WHERE id = ? AND delivery_id = ? AND status IN ('picked_up', 'in_process')
+        ");
+        $stmt->execute([$orderId, $deliveryId]);
+
+        if ($stmt->rowCount() > 0) {
+            // Notify customer
+            $stmtUser = $pdo->prepare("SELECT user_id FROM orders WHERE id = ?");
+            $stmtUser->execute([$orderId]);
+            $ownerId = $stmtUser->fetchColumn();
+            sendPushNotification($pdo, $ownerId, "Order Ready for Delivery", "Your laundry is cleaned and packed! Out for delivery soon.");
+            respond(true, 'Order marked as out for delivery.');
+        } else {
+            respond(false, 'Could not update. Order may not be yours or not in the right stage.');
         }
     } catch (\Exception $e) {
         respond(false, 'Database Error: ' . $e->getMessage());
