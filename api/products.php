@@ -25,9 +25,10 @@ if (!hash_equals($_SESSION['csrf_token'], $csrfToken)) {
 
 // ─── PUBLIC: Get all active products with their prices ───────────────────────
 if ($action === 'get_products') {
-    $activeOnly = ($data['active_only'] ?? true);
+    // active_only defaults to true; admin passes false to see all
+    $activeOnly = ($data['active_only'] ?? true) !== false;
     $where = $activeOnly ? "WHERE p.is_active = 1" : "";
-    $stmt = $pdo->query("
+    $stmt = $pdo->prepare("
         SELECT p.id, p.name, p.description, p.image_url, p.is_active, p.sort_order,
                JSON_ARRAYAGG(
                    JSON_OBJECT('id', pp.id, 'size_label', pp.size_label, 'price', pp.price, 'unit', pp.unit)
@@ -38,16 +39,16 @@ if ($action === 'get_products') {
         GROUP BY p.id
         ORDER BY p.sort_order ASC, p.created_at ASC
     ");
+    $stmt->execute([]);
     $products = $stmt->fetchAll();
-    // Decode JSON prices field
     foreach ($products as &$prod) {
-        $prod['prices'] = json_decode($prod['prices'], true) ?? [];
-        // Filter out NULLs from LEFT JOIN with no prices
-        $prod['prices'] = array_filter($prod['prices'], fn($p) => $p['id'] !== null);
-        $prod['prices'] = array_values($prod['prices']);
+        $decoded = json_decode($prod['prices'], true) ?? [];
+        $prod['prices'] = array_values(array_filter($decoded, fn($p) => $p['id'] !== null));
     }
+    unset($prod);
     respond(true, 'Products fetched', ['products' => $products]);
 }
+
 
 // ─── ADMIN ONLY beyond this point ─────────────────────────────────────────────
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {

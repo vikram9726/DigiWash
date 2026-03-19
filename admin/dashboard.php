@@ -296,6 +296,15 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             </div>
         </section>
 
+        <!-- ══ PRODUCTS ══ -->
+        <section id="products" class="section-content">
+            <div class="top-bar">
+                <div class="page-title">Product <span>Catalog</span></div>
+                <button class="btn-sm btn-primary" onclick="openModal('addProductModal')">+ Add Product</button>
+            </div>
+            <div id="productsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.2rem;margin-top:1rem;"></div>
+        </section>
+
     </main>
 </div>
 
@@ -399,14 +408,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     </div>
 </div>
 
-<!-- ══ PRODUCTS SECTION ══ -->
-<section id="products" class="section-content" style="display:none;animation:fadeUp 0.3s ease;">
-    <div class="top-bar">
-        <div class="page-title">Product <span>Catalog</span></div>
-        <button class="btn-sm btn-primary" onclick="openModal('addProductModal')">+ Add Product</button>
-    </div>
-    <div id="productsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.2rem;margin-top:1rem;"></div>
-</section>
+<!-- ══ PRODUCTS section moved inside main above ══ -->
+
 
 <!-- Add Product Modal -->
 <div class="modal-overlay" id="addProductModal">
