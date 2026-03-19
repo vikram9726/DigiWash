@@ -98,8 +98,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
         .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 1rem; margin-bottom: 0.5rem; }
         .form-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 0.75rem; }
         .form-group label { font-size: 0.8rem; font-weight: 700; color: #475569; }
-        .form-group input, .form-group select, .form-group textarea { padding: 0.55rem 0.8rem; border: 1.5px solid #e2e8f0; border-radius: 9px; font-size: 0.875rem; outline: none; font-family: inherit; transition: border-color 0.2s; }
-        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: #6366f1; }
+        .form-group input, .form-group select, .form-group textarea, .form-control { padding: 0.55rem 0.8rem; border: 1.5px solid #e2e8f0; border-radius: 9px; font-size: 0.875rem; outline: none; font-family: inherit; transition: border-color 0.2s; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus, .form-control:focus { border-color: #6366f1; }
         .form-msg { font-size: 0.85rem; font-weight: 600; padding: 0.5rem 0; display: none; }
 
         /* ── Charts ── */
