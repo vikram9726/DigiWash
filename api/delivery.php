@@ -121,7 +121,7 @@ if ($action === 'fulfill_pickup') {
     // In a real scenario, the delivery partner takes the clothes and marks it "picked_up"
     // Which then transitions to "in_process" (washing) at the facility
     try {
-        $stmt = $pdo->prepare("UPDATE orders SET status = 'in_process', updated_at = NOW() WHERE id = ? AND delivery_id = ? AND status = 'pending'");
+        $stmt = $pdo->prepare("UPDATE orders SET status = 'in_process', picked_up_at = NOW(), updated_at = NOW() WHERE id = ? AND delivery_id = ? AND status = 'pending'");
         $stmt->execute([$orderId, $deliveryId]);
         
         if ($stmt->rowCount() > 0) {
@@ -129,7 +129,10 @@ if ($action === 'fulfill_pickup') {
             $stmtUser = $pdo->prepare("SELECT user_id FROM orders WHERE id = ?");
             $stmtUser->execute([$orderId]);
             $ownerId = $stmtUser->fetchColumn();
-            sendPushNotification($pdo, $ownerId, "Clothes Picked Up", "Your clothes have been collected and are now in process!");
+            $title = "Clothes Picked Up";
+            $msg = "Your clothes have been successfully collected and are now making their way to our laundry facility!";
+            $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)")->execute([$ownerId, $title, $msg]);
+            sendPushNotification($pdo, $ownerId, $title, $msg);
             
             respond(true, 'Pickup marked as successfully collected & sent to processing.');
         } else {
@@ -169,7 +172,52 @@ if ($action === 'mark_ready') {
 
 
 
-// --- BYPASS DELIVERY (PHOTO UPLOAD) ---
+// --- FULFILL DELIVERY (OTP) ---
+if ($action === 'complete_delivery_otp') {
+    $orderId = $data['order_id'] ?? 0;
+    $otp = htmlspecialchars(strip_tags($data['otp'] ?? ''), ENT_QUOTES, 'UTF-8');
+
+    if (empty($otp)) respond(false, 'PIN is required.');
+
+    $stmt = $pdo->prepare("SELECT user_id, delivery_id FROM orders WHERE id = ? AND status = 'out_for_delivery'");
+    $stmt->execute([$orderId]);
+    $order = $stmt->fetch();
+
+    if (!$order || $order['delivery_id'] != $deliveryId) {
+        respond(false, 'Invalid order or order is not ready for delivery.');
+    }
+
+    $salt = "digiwash_delivery_otp_sec";
+    $timeWindow = floor(time() / 1800); // 30 minutes
+    $expectedOtp = str_pad(abs(crc32($order['user_id'] . $salt . $timeWindow)) % 1000000, 6, '0', STR_PAD_LEFT);
+    $prevOtp = str_pad(abs(crc32($order['user_id'] . $salt . ($timeWindow - 1))) % 1000000, 6, '0', STR_PAD_LEFT);
+
+    if ($otp !== $expectedOtp && $otp !== $prevOtp) {
+        respond(false, 'Incorrect PIN. Handover denied. Please request the active PIN from the customer\'s dashboard.');
+    }
+
+    try {
+        $pdo->beginTransaction();
+        $stmt = $pdo->prepare("UPDATE orders SET status = 'delivered', delivered_at = NOW(), updated_at = NOW() WHERE id = ?");
+        $stmt->execute([$orderId]);
+        
+        $ownerId = $order['user_id'];
+        
+        // Notification
+        $title = "Order Delivered";
+        $msg = "Your laundry order #$orderId has been successfully delivered. Thank you for choosing DigiWash!";
+        $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)")->execute([$ownerId, $title, $msg]);
+        sendPushNotification($pdo, $ownerId, $title, $msg);
+
+        $pdo->commit();
+        respond(true, 'Delivery completed successfully via PIN!');
+    } catch (\Exception $e) {
+        $pdo->rollBack();
+        respond(false, 'Database Error: ' . $e->getMessage());
+    }
+}
+
+// --- BYPASS DELIVERY (QR UPLOAD) ---
 if ($action === 'complete_delivery_qr') {
     $orderId = filter_var($data['order_id'] ?? '', FILTER_VALIDATE_INT);
     $qrHash = htmlspecialchars(strip_tags($data['qr_hash'] ?? ''), ENT_QUOTES, 'UTF-8');
@@ -201,12 +249,18 @@ if ($action === 'complete_delivery_qr') {
         $pdo->beginTransaction();
 
         // Mark order as delivered
-        $pdo->prepare("UPDATE orders SET status = 'delivered', updated_at = NOW() WHERE id = ?")
+        $pdo->prepare("UPDATE orders SET status = 'delivered', delivered_at = NOW(), updated_at = NOW() WHERE id = ?")
             ->execute([$orderId]);
 
         // Automatically update the related payment to completed
         $pdo->prepare("UPDATE payments SET status = 'completed', updated_at = NOW() WHERE order_id = ?")
             ->execute([$orderId]);
+            
+        $ownerId = $order['user_id'];
+        $title = "Delivery Verified via QR";
+        $msg = "Order #$orderId was successfully scanned and securely delivered to your location. Thank you!";
+        $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)")->execute([$ownerId, $title, $msg]);
+        sendPushNotification($pdo, $ownerId, $title, $msg);
 
         $pdo->commit();
         respond(true, 'Delivery completed successfully via QR Scan!');
@@ -264,11 +318,18 @@ if ($action === 'complete_delivery_bypass') {
             $pdo->beginTransaction();
             
             // Mark as delivered, store bypass photo URL
-            $stmt = $pdo->prepare("UPDATE orders SET status = 'delivered', bypass_photo_url = ?, updated_at = NOW() WHERE id = ? AND delivery_id = ?");
+            $stmt = $pdo->prepare("UPDATE orders SET status = 'delivered', delivered_at = NOW(), bypass_photo_url = ?, updated_at = NOW() WHERE id = ? AND delivery_id = ?");
             $stmt->execute([$publicPhotoUrl, $orderId, $deliveryId]);
 
-            // Here you would trigger the SMS API to send a message to the customer:
-            // "Your order was delivered to staff at $staffNumber. View photo: $publicPhotoUrl"
+            // Track user ID
+            $uStmt = $pdo->prepare("SELECT user_id FROM orders WHERE id = ?");
+            $uStmt->execute([$orderId]);
+            $ownerId = $uStmt->fetchColumn();
+
+            $title = "Bypass Delivery Note";
+            $msg = "Order #$orderId was securely delivered to staff at contact: $staffNumber because you were unavailable.";
+            $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)")->execute([$ownerId, $title, $msg]);
+            sendPushNotification($pdo, $ownerId, $title, $msg);
 
             $pdo->commit();
             respond(true, 'Delivery bypassed and marked complete. Notice sent to customer.');

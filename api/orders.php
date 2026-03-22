@@ -280,9 +280,23 @@ if ($action === 'get_orders') {
     $type = $data['type'] ?? 'ongoing'; // ongoing or completed
 
     if ($type === 'ongoing') {
-        $stmt = $pdo->prepare("SELECT o.*, p.payment_mode FROM orders o LEFT JOIN payments p ON p.order_id = o.id WHERE o.user_id = ? AND o.status != 'delivered' AND o.status != 'cancelled' ORDER BY o.created_at DESC");
+        $stmt = $pdo->prepare("
+            SELECT o.*, p.payment_mode, d.name as delivery_guy_name, d.phone as delivery_guy_phone 
+            FROM orders o 
+            LEFT JOIN payments p ON p.order_id = o.id 
+            LEFT JOIN users d ON o.delivery_id = d.id
+            WHERE o.user_id = ? AND o.status != 'delivered' AND o.status != 'cancelled' 
+            ORDER BY o.created_at DESC
+        ");
     } else {
-        $stmt = $pdo->prepare("SELECT o.*, p.payment_mode FROM orders o LEFT JOIN payments p ON p.order_id = o.id WHERE o.user_id = ? AND (o.status = 'delivered' OR o.status = 'cancelled') ORDER BY o.created_at DESC");
+        $stmt = $pdo->prepare("
+            SELECT o.*, p.payment_mode, d.name as delivery_guy_name, d.phone as delivery_guy_phone 
+            FROM orders o 
+            LEFT JOIN payments p ON p.order_id = o.id 
+            LEFT JOIN users d ON o.delivery_id = d.id
+            WHERE o.user_id = ? AND (o.status = 'delivered' OR o.status = 'cancelled') 
+            ORDER BY o.created_at DESC
+        ");
     }
     
     $stmt->execute([$userId]);
@@ -295,6 +309,22 @@ if ($action === 'get_orders') {
     }
 
     respond(true, 'Orders fetched', ['orders' => $orders]);
+}
+
+// --- FETCH NOTIFICATIONS ---
+if ($action === 'get_notifications') {
+    $stmt = $pdo->prepare("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 30");
+    $stmt->execute([$userId]);
+    $notifs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $unreadCount = 0;
+    foreach($notifs as $n) { if ($n['is_read'] == 0) $unreadCount++; }
+    respond(true, 'OK', ['notifications' => $notifs, 'unread' => $unreadCount]);
+}
+
+// --- MARK NOTIFICATIONS READ ---
+if ($action === 'mark_notifications_read') {
+    $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ?")->execute([$userId]);
+    respond(true, 'All marked as read.');
 }
 
 // --- CANCEL ORDER ---

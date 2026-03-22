@@ -13,6 +13,12 @@ $userName   = htmlspecialchars($user['name'] ?? 'User');
 $userPhone  = htmlspecialchars($user['phone'] ?? '');
 $payLaterPlan = $user['pay_later_plan'] ?? 'NONE';
 $payLaterStatus = $user['pay_later_status'] ?? 'locked';
+
+// Delivery OTP Generator (30 Min Rolling Window)
+$otpSalt = "digiwash_delivery_otp_sec";
+$timeWindow = floor(time() / 1800); // 30 minutes
+$hashValue = abs(crc32($_SESSION['user_id'] . $otpSalt . $timeWindow)) % 1000000;
+$userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -87,6 +93,18 @@ $payLaterStatus = $user['pay_later_status'] ?? 'locked';
         .stat-lbl{font-size:0.78rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
         .stat-val{font-size:2rem;font-weight:900;color:var(--text);line-height:1;}
         .stat-sub{font-size:0.75rem;color:var(--muted);}
+
+        /* ── Notifications ── */
+        .notif-drop{display:none;position:absolute;top:54px;right:0;width:340px;background:var(--card);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,0.15);z-index:900;flex-direction:column;overflow:hidden;}
+        .notif-drop.open{display:flex !important;animation:fadeDown .2s ease;}
+        @keyframes fadeDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+        .notif-item { padding: 1rem; border-bottom: 1px solid var(--border); cursor: pointer; transition: all .15s; }
+        .notif-item:hover { background: #f8fafc; }
+        .notif-item:last-child { border-bottom: none; }
+        .notif-item.unread { background: #f8faff; border-left: 3px solid var(--primary); }
+        .notif-item-title { font-size: .85rem; font-weight: 800; color: var(--text); margin-bottom: 3px; }
+        .notif-item-msg { font-size: .78rem; color: var(--muted); line-height: 1.4; }
+        .notif-item-time { font-size: .68rem; color: var(--primary); margin-top: 6px; font-weight: 700; }
 
         /* ── Alert banner ── */
         .alert-banner{display:flex;align-items:center;gap:12px;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.5rem;}
@@ -240,6 +258,12 @@ $payLaterStatus = $user['pay_later_status'] ?? 'locked';
             </div>
         </div>
 
+        <div style="background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(5,150,105,0.1)); border:1.5px dashed rgba(16,185,129,0.3); border-radius:12px; padding:1.2rem; margin-bottom:1rem; text-align:center;">
+            <div style="font-size:0.75rem; color:#10b981; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:5px;">Delivery Verify PIN</div>
+            <div style="font-size:2.2rem; font-weight:900; color:white; letter-spacing:8px; line-height:1; font-family:monospace;"><?= $userDeliveryOtp ?></div>
+            <div style="font-size:0.65rem; color:#94a3b8; font-weight:600; margin-top:8px;">PIN auto-refreshes every 30 mins</div>
+        </div>
+
         <div class="nav-section">Menu</div>
         <div class="nav-item active" id="nav-home" onclick="switchTab('home',this)">
             <i class="material-icons-outlined">dashboard</i> Home
@@ -266,6 +290,23 @@ $payLaterStatus = $user['pay_later_status'] ?? 'locked';
 
     <!-- ── MAIN ── -->
     <main class="main">
+
+        <!-- GLOBAL TOP NAV -->
+        <div style="display:flex; justify-content:flex-end; margin-bottom:1.5rem; position:relative; z-index:900;">
+            <div class="nav-bell" onclick="document.getElementById('notifDropdown').classList.toggle('open')" style="background:var(--card); width:46px; height:46px; border-radius:12px; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.05); position:relative; border:1px solid var(--border);">
+                <i class="material-icons-outlined" style="font-size:1.5rem; color:var(--text);">notifications</i>
+                <span class="nav-badge" id="notifBadge" style="position:absolute; top:-6px; right:-6px; display:none;">0</span>
+            </div>
+            <!-- Notif Dropdown -->
+            <div id="notifDropdown" class="notif-drop">
+                <div style="padding:1.2rem; border-bottom:1px solid var(--border); font-weight:900; font-size:.95rem; display:flex; justify-content:space-between; align-items:center;">
+                    Alerts <button onclick="markNotifsRead()" style="background:none;border:none;color:var(--primary);font-size:.78rem;font-weight:800;cursor:pointer;">Mark all read</button>
+                </div>
+                <div id="notifList" style="max-height:380px; overflow-y:auto;">
+                    <div style="padding:2rem 1rem;text-align:center;color:var(--muted);font-size:.85rem;">Checking alerts...</div>
+                </div>
+            </div>
+        </div>
 
         <?php if($needsProfileSetup): ?>
         <div class="alert-banner">
@@ -475,11 +516,8 @@ $payLaterStatus = $user['pay_later_status'] ?? 'locked';
                         <p>Show this to the delivery partner to securely complete your delivery.</p>
                     </div>
                     <div class="card-sm" style="margin-top:1rem;text-align:center;">
-                        <div style="font-size:.82rem;font-weight:600;color:var(--muted);">Your Delivery OTP</div>
-                        <div style="font-size:2rem;font-weight:900;letter-spacing:8px;color:var(--primary);margin-top:4px;">
-                            <?= htmlspecialchars($user['dummy_otp'] ?? '——') ?>
-                        </div>
-                        <div style="font-size:.75rem;color:var(--muted);margin-top:4px;">Share only with your delivery partner</div>
+                        <div style="font-size:.82rem;font-weight:600;color:var(--muted);"><i class="material-icons-outlined" style="vertical-align:middle; font-size:1.1rem; color:var(--primary);">verified_user</i> DigiWash Standard Security</div>
+                        <div style="font-size:.7rem;color:var(--muted);margin-top:6px; line-height:1.4;">Active Deliveries will prompt for verifying your session.</div>
                     </div>
                 </div>
             </div>
@@ -864,6 +902,42 @@ async function loadOrders(type, tabEl) {
                     <div class="tl-lbl">${s.replace(/_/g,' ')}</div>
                 </div>`).join('')}
             </div>` : '';
+
+        let devInfo = '';
+        if (o.delivery_guy_name) {
+            let statusText = 'Assigned for task';
+            if (['picked_up', 'in_process', 'out_for_delivery'].includes(o.status)) {
+                statusText = `Picked up: ${o.picked_up_at ? new Date(o.picked_up_at).toLocaleString('en-IN', {hour:'2-digit',minute:'2-digit'}) : 'Processing...'}`;
+            } else if (o.status === 'delivered') {
+                statusText = `Delivered: ${o.delivered_at ? new Date(o.delivered_at).toLocaleString('en-IN', {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short',year:'numeric'}) : 'Completed'}`;
+            }
+            
+            let phoneStr = ['out_for_delivery', 'delivered'].includes(o.status) ? `📞 ${o.delivery_guy_phone || 'N/A'}` : `📞 [Hidden pending dispatch]`;
+            
+            let bypassUi = '';
+            if (o.status === 'delivered' && o.bypass_photo_url) {
+                bypassUi = `
+                    <div style="margin-top:8px; padding-top:8px; border-top:1.5px dashed #bbf7d0;">
+                        <div style="font-size:0.75rem; font-weight:800; color:#d97706; margin-bottom:4px;"><i class="material-icons-outlined" style="font-size:1rem; vertical-align:middle;">warning</i> Delivered via Staff Bypass</div>
+                        <a href="../${o.bypass_photo_url}" target="_blank" style="font-size:0.8rem; color:#2563eb; font-weight:700; text-decoration:none;"><i class="material-icons-outlined" style="font-size:1rem; vertical-align:middle;">photo_camera</i> View Proof Photo</a>
+                    </div>
+                `;
+            }
+
+            devInfo = `
+                <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:0.8rem; margin-top:0.75rem; display:flex; gap:12px;">
+                    <div style="width:36px; height:36px; border-radius:10px; background:#22c55e; color:white; font-weight:800; display:flex; align-items:center; justify-content:center; font-size:1.1rem; flex-shrink:0;">
+                        ${o.delivery_guy_name.substring(0,1).toUpperCase()}
+                    </div>
+                    <div style="flex:1;">
+                        <div style="font-size:0.85rem; font-weight:800; color:#166534;">${o.delivery_guy_name}</div>
+                        <div style="font-size:0.75rem; color:#15803d; margin-top:3px; font-weight:600;">${phoneStr} <span style="margin:0 4px">•</span> ${statusText}</div>
+                        ${bypassUi}
+                    </div>
+                </div>
+            `;
+        }
+
         return `
             <div class="order-row">
                 <div class="order-row-top">
@@ -879,6 +953,7 @@ async function loadOrders(type, tabEl) {
                     </div>
                 </div>
                 ${timeline}
+                ${devInfo}
                 ${o.items && o.items.length ? `
                     <div style="background:#f8fafc;padding:0.7rem 0.85rem;border-radius:8px;margin-top:0.75rem;font-size:0.8rem;color:#475569;border:1px solid var(--border);">
                         <strong>Items:</strong> ${o.items.map(it => `${it.product_name} (${it.size_label}) × ${it.quantity}`).join(', ')}
