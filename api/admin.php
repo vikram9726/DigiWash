@@ -97,14 +97,21 @@ if ($action === 'get_analytics') {
 // ─────────────────────────────────────────────
 if ($action === 'get_users') {
     $search = '%' . ($data['search'] ?? '') . '%';
+    $filter = $data['filter'] ?? 'all';
+    
+    $whereClause = "WHERE u.role = 'customer' AND (u.name LIKE ? OR u.phone LIKE ? OR u.email LIKE ?)";
+    if ($filter === 'pay_later') {
+        $whereClause .= " AND u.pay_later_status != 'locked'";
+    }
+
     $stmt = $pdo->prepare("
-        SELECT u.id, u.name, u.phone, u.email, u.shop_address, u.created_at, u.is_blocked,
+        SELECT u.id, u.name, u.phone, u.email, u.shop_address, u.created_at, u.is_blocked, u.pay_later_plan, u.pay_later_status,
                COUNT(o.id) as total_orders,
                COALESCE(SUM(p.amount),0) as total_spent
         FROM users u
         LEFT JOIN orders o ON o.user_id = u.id AND o.status = 'delivered'
         LEFT JOIN payments p ON p.user_id = u.id AND p.status = 'completed'
-        WHERE u.role = 'customer' AND (u.name LIKE ? OR u.phone LIKE ? OR u.email LIKE ?)
+        $whereClause
         GROUP BY u.id
         ORDER BY u.created_at DESC
     ");
@@ -116,15 +123,38 @@ if ($action === 'get_users') {
 if ($action === 'get_user_orders') {
     $userId = (int)($data['user_id'] ?? 0);
     if (!$userId) respond(false, 'User ID required.');
+    
+    $stmtUser = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+    $stmtUser->execute([$userId]);
+    $userData = $stmtUser->fetch();
+    if (!$userData) respond(false, 'User not found');
+
     $stmt = $pdo->prepare("
-        SELECT o.*, d.name as delivery_name
+        SELECT o.*, d.name as delivery_name,
+               p.payment_mode, p.status as payment_status, p.amount as payment_amount
         FROM orders o
         LEFT JOIN users d ON o.delivery_id = d.id
+        LEFT JOIN payments p ON p.order_id = o.id
         WHERE o.user_id = ?
-        ORDER BY o.created_at DESC LIMIT 20
+        ORDER BY o.created_at DESC LIMIT 100
     ");
     $stmt->execute([$userId]);
-    respond(true, 'Orders fetched', ['orders' => $stmt->fetchAll()]);
+    $orders = $stmt->fetchAll();
+
+    $stmtPay = $pdo->prepare("SELECT COALESCE(SUM(amount),0) as paid FROM payments WHERE user_id = ? AND status = 'completed'");
+    $stmtPay->execute([$userId]);
+    $totalPaid = $stmtPay->fetchColumn();
+
+    $stmtDue = $pdo->prepare("SELECT COALESCE(SUM(amount),0) as due FROM payments WHERE user_id = ? AND status = 'remaining'");
+    $stmtDue->execute([$userId]);
+    $totalDue = $stmtDue->fetchColumn();
+
+    respond(true, 'History fetched', [
+        'user' => $userData, 
+        'orders' => $orders, 
+        'total_paid' => $totalPaid, 
+        'total_due' => $totalDue
+    ]);
 }
 
 if ($action === 'toggle_block_user') {
@@ -135,6 +165,27 @@ if ($action === 'toggle_block_user') {
         respond(true, 'User block status toggled.');
     } catch (\Exception $e) {
         respond(false, 'DB Error: ' . $e->getMessage());
+    }
+}
+
+if ($action === 'assign_pay_later_plan') {
+    $userId = (int)($data['user_id'] ?? 0);
+    $planAction = $data['plan_action'] ?? '';
+    
+    if (in_array($planAction, ['PAY_LATER_4', 'PAY_LATER_8', 'PAY_LATER_12'])) {
+        $stmt = $pdo->prepare("UPDATE users SET pay_later_plan = ?, pay_later_status = 'approved' WHERE id = ?");
+        $stmt->execute([$planAction, $userId]);
+        respond(true, "Successfully approved and assigned $planAction.");
+    } elseif ($planAction === 'DECLINED') {
+        $stmt = $pdo->prepare("UPDATE users SET pay_later_status = 'declined' WHERE id = ?");
+        $stmt->execute([$userId]);
+        respond(true, "Pay Later request declined.");
+    } elseif ($planAction === 'NONE') {
+        $stmt = $pdo->prepare("UPDATE users SET pay_later_plan = 'NONE', pay_later_status = 'locked' WHERE id = ?");
+        $stmt->execute([$userId]);
+        respond(true, "Plan reset and locked.");
+    } else {
+        respond(false, "Invalid action requested.");
     }
 }
 

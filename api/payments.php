@@ -74,6 +74,12 @@ if ($action === 'create_rzp_order') {
     $resData = json_decode($response, true);
 
     if ($httpCode === 200 && isset($resData['id'])) {
+        try {
+            // Save rzp_order_id to DB for tracking purpose
+            $stmt = $pdo->prepare("UPDATE payments SET rzp_order_id = ? WHERE order_id = ?");
+            $stmt->execute([$resData['id'], $orderId]);
+        } catch (\Exception $e) { }
+
         respond(true, 'Razorpay order created', ['rzp_order_id' => $resData['id'], 'amount' => $amountInPaise, 'key' => $razorpayKeyId]);
     } else {
         error_log("Razorpay Order Error: " . $response);
@@ -105,8 +111,8 @@ if ($action === 'verify_payment') {
             $stmt->execute([$localOrderId, $userId]);
 
             // 2. Update payment record
-            $stmt = $pdo->prepare("UPDATE payments SET status = 'completed', updated_at = NOW() WHERE order_id = ?");
-            $stmt->execute([$localOrderId]);
+            $stmt = $pdo->prepare("UPDATE payments SET status = 'completed', rzp_payment_id = ?, updated_at = NOW() WHERE order_id = ?");
+            $stmt->execute([$rzpPaymentId, $localOrderId]);
 
             $pdo->commit();
             respond(true, 'Payment verified and captured successfully!');

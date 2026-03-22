@@ -11,6 +11,8 @@ $qrCodeHash = $user['qr_code_hash'] ?? '';
 $csrfToken  = $_SESSION['csrf_token'] ?? '';
 $userName   = htmlspecialchars($user['name'] ?? 'User');
 $userPhone  = htmlspecialchars($user['phone'] ?? '');
+$payLaterPlan = $user['pay_later_plan'] ?? 'NONE';
+$payLaterStatus = $user['pay_later_status'] ?? 'locked';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -358,6 +360,24 @@ $userPhone  = htmlspecialchars($user['phone'] ?? '');
                     <div id="couponFeedback" style="font-size:.82rem;font-weight:600;margin-top:5px;"></div>
                 </div>
 
+                <div class="form-group">
+                    <label>Payment Mode</label>
+                    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                        <select id="paymentMode" class="form-control" style="flex:1;">
+                            <option value="ONLINE">Pay Now (Online)</option>
+                            <option value="COD">Cash on Delivery</option>
+                            <option value="<?= $payLaterPlan !== 'NONE' ? $payLaterPlan : 'PAY_LATER' ?>" <?= $payLaterStatus !== 'approved' ? 'disabled' : '' ?>>
+                                Pay Later <?= $payLaterPlan !== 'NONE' ? '('.str_replace('PAY_LATER_','', $payLaterPlan).' Orders)' : '' ?>
+                            </option>
+                        </select>
+                        <?php if($payLaterStatus === 'locked' || $payLaterStatus === 'declined' || $payLaterPlan === 'NONE'): ?>
+                            <button type="button" class="btn btn-outline btn-sm" onclick="requestPayLater()" style="white-space:nowrap; padding:.6rem 1rem;"><i class="material-icons-outlined" style="font-size:1rem;vertical-align:middle;">security_update_good</i> Request Pay Later</button>
+                        <?php elseif($payLaterStatus === 'pending_approval'): ?>
+                            <button type="button" class="btn btn-ghost btn-sm" disabled style="white-space:nowrap; padding:.6rem 1rem;">Pending Approval...</button>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
                 <button class="btn btn-primary" id="submitOrderBtn" disabled style="width:100%;justify-content:center;padding:.8rem;">
                     <i class="material-icons-outlined" style="font-size:1rem;">local_shipping</i> Request Pickup
                 </button>
@@ -480,6 +500,8 @@ $userPhone  = htmlspecialchars($user['phone'] ?? '');
 
 <script>
 const csrfToken = "<?= $csrfToken ?>";
+const userPayLaterPlan = "<?= $payLaterPlan ?>";
+const userPayLaterStatus = "<?= $payLaterStatus ?>";
 let cart = {};
 let appliedDiscount = 0;
 let currentOrderTab = 'ongoing';
@@ -684,7 +706,8 @@ document.getElementById('submitOrderBtn')?.addEventListener('click', async () =>
     const payload = {
         items: items.map(it => ({ product_price_id: it.product_price_id, quantity: it.quantity })),
         instructions: document.getElementById('orderInstr').value,
-        coupon_code: document.getElementById('couponCode').value
+        coupon_code: document.getElementById('couponCode').value,
+        payment_mode: document.getElementById('paymentMode').value
     };
     const d = await apiCall('../api/orders.php','create_order', payload);
 
@@ -702,7 +725,14 @@ document.getElementById('submitOrderBtn')?.addEventListener('click', async () =>
         btn.innerHTML='<i class="material-icons-outlined" style="font-size:1rem;">local_shipping</i> Request Pickup';
         btn.disabled = true;
         fetchStats();
-        switchTab('history', document.getElementById('nav-history'));
+        
+        if (payload.payment_mode === 'ONLINE') {
+            toast('success','Order Placed! 🎉', 'Initiating payment gateway...');
+            switchTab('payments', document.getElementById('nav-payments'));
+            initiatePayment(d.order_id, document.getElementById('cartGrand').textContent.replace('₹',''));
+        } else {
+            switchTab('history', document.getElementById('nav-history'));
+        }
     } else {
         toast('error','Order Failed', d.message);
         btn.innerHTML='<i class="material-icons-outlined" style="font-size:1rem;">local_shipping</i> Request Pickup';
@@ -781,17 +811,17 @@ async function loadPayments(type, tabEl) {
 // ── Razorpay ─────────────────────────────────────────────────
 async function initiatePayment(orderId, amount) {
     try {
-        const initRes = await apiCall('../api/payments.php','initiate_payment',{ order_id:orderId, amount });
+        const initRes = await apiCall('../api/payments.php','create_rzp_order',{ order_id:orderId });
         if (!initRes.success) { toast('error','Payment Error',initRes.message); return; }
         const opts = {
-            key: initRes.key_id,
+            key: initRes.key,
             amount: initRes.amount,
             currency: 'INR',
             name: 'DigiWash',
             description: 'Order #' + orderId,
-            order_id: initRes.razorpay_order_id,
+            order_id: initRes.rzp_order_id,
             handler: async (res) => {
-                const vd = await apiCall('../api/payments.php','verify_payment',{ razorpay_payment_id:res.razorpay_payment_id, razorpay_order_id:res.razorpay_order_id, razorpay_signature:res.razorpay_signature, order_id:orderId });
+                const vd = await apiCall('../api/payments.php','verify_payment',{ razorpay_payment_id:res.razorpay_payment_id, razorpay_order_id:res.razorpay_order_id, razorpay_signature:res.razorpay_signature, local_order_id:orderId });
                 toast(vd.success?'success':'error', vd.success?'Payment Successful':'Verification Failed', vd.message);
                 if (vd.success) { fetchStats(); loadPayments('remaining'); }
             },
@@ -863,11 +893,25 @@ async function apiCall(url, action, payload = {}) {
     } catch { return { success:false, message:'Network error.' }; }
 }
 
+// ── Pay Later Request ─────────────────────────────────────────
+async function requestPayLater() {
+    const d = await apiCall('../api/orders.php','request_pay_later_plan', {});
+    toast(d.success?'success':'error', 'Pay Later Request', d.message);
+    if(d.success) setTimeout(()=>location.reload(), 1500);
+}
+
 // ── Init ─────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     fetchStats();
     loadActivity();
     renderQR();
+    
+    // Disable pay later options in dropdown if not approved
+    Array.from(document.getElementById('paymentMode')?.options || []).forEach(opt => {
+        if(opt.value.startsWith('PAY_LATER') && (userPayLaterPlan !== opt.value || userPayLaterStatus !== 'approved')) {
+            opt.disabled = true;
+        }
+    });
 });
 </script>
 </body>

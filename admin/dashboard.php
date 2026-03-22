@@ -197,12 +197,16 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
                     <div class="panel-title">All Customers</div>
                     <div class="search-bar">
                         <input type="text" id="userSearch" placeholder="Search name / phone / email…" oninput="loadUsers()">
+                        <select id="userFilter" onchange="loadUsers()">
+                            <option value="all">All Customers</option>
+                            <option value="pay_later">Pay Later Requests</option>
+                        </select>
                     </div>
                 </div>
                 <div class="tbl-wrap">
                     <table>
-                        <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Orders</th><th>Spent</th><th>Joined</th><th>Status</th><th>Actions</th></tr></thead>
-                        <tbody id="usersBody"><tr><td colspan="9"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
+                        <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Orders</th><th>Spent</th><th>Pay Later</th><th>Joined</th><th>Status</th><th>Actions</th></tr></thead>
+                        <tbody id="usersBody"><tr><td colspan="10"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -310,13 +314,19 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 
 <!-- ══════════════ MODALS ══════════════ -->
 
-<!-- User Orders Modal -->
+<!-- User Profile & Orders Modal -->
 <div class="modal-overlay" id="userOrdersModal">
-    <div class="modal-box lg">
+    <div class="modal-box lg" style="max-width:900px;">
         <button class="modal-close" onclick="closeModal('userOrdersModal')">✕</button>
-        <div class="modal-title" id="userOrdersTitle">Customer Orders</div>
+        <div class="modal-title" id="userOrdersTitle">Customer Profile & History</div>
+        
+        <div id="userProfileSummary" class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom: 1.5rem;">
+            <!-- Summary stats injected here -->
+        </div>
+
+        <div class="panel-title" style="margin-bottom:1rem; font-size:1rem;">Orders Tracking & Payments</div>
         <div class="tbl-wrap"><table>
-            <thead><tr><th>#</th><th>Amount</th><th>Status</th><th>Partner</th><th>Date</th></tr></thead>
+            <thead><tr><th>Order #</th><th>Timeline Tracking</th><th>Partner</th><th>Payment Split</th><th>Date</th></tr></thead>
             <tbody id="userOrdersBody"></tbody>
         </table></div>
     </div>
@@ -598,10 +608,11 @@ function refreshAll() { loadStats(); loadAnalytics(); }
 async function loadUsers() {
     const tbody = document.getElementById('usersBody');
     const search = document.getElementById('userSearch').value;
-    tbody.innerHTML = '<tr><td colspan="9"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr>';
-    const d = await api('get_users', { search });
+    const filter = document.getElementById('userFilter').value;
+    tbody.innerHTML = '<tr><td colspan="10"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr>';
+    const d = await api('get_users', { search, filter });
     if (!d.success || !d.users.length) {
-        tbody.innerHTML = '<tr><td colspan="9"><div class="no-data"><i class="material-icons-outlined">people_outline</i>No customers found.</div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10"><div class="no-data"><i class="material-icons-outlined">people_outline</i>No customers found.</div></td></tr>';
         return;
     }
     tbody.innerHTML = d.users.map(u => `
@@ -612,11 +623,22 @@ async function loadUsers() {
             <td style="font-size:0.82rem">${u.email || '—'}</td>
             <td><strong>${u.total_orders}</strong></td>
             <td>₹${parseFloat(u.total_spent||0).toFixed(0)}</td>
+            <td>
+                ${u.pay_later_plan !== 'NONE' ? `
+                    <div style="font-size:0.75rem;font-weight:700;color:var(--primary);">${u.pay_later_plan.replace('PAY_LATER_','Pay after ')}</div>
+                    <select style="font-size:0.7rem;padding:2px;border-radius:4px" onchange="handlePayLater(this, ${u.id})">
+                        <option value="locked" ${u.pay_later_status==='locked'?'selected':''}>Locked</option>
+                        <option value="pending_approval" ${u.pay_later_status==='pending_approval'?'selected':''}>Pending</option>
+                        <option value="approved" ${u.pay_later_status==='approved'?'selected':''}>Approved</option>
+                        <option value="declined" ${u.pay_later_status==='declined'?'selected':''}>Declined</option>
+                    </select>
+                ` : '<div style="font-size:0.8rem;color:#94a3b8">—</div>'}
+            </td>
             <td style="font-size:0.8rem">${new Date(u.created_at).toLocaleDateString()}</td>
             <td>${u.is_blocked ? '<span class="badge b-red">Blocked</span>' : '<span class="badge b-green">Active</span>'}</td>
             <td>
                 <div class="action-btns">
-                    <button class="btn-sm btn-outline" onclick="viewUserOrders(${u.id},'${(u.name||'User').replace(/'/g,'')}')" title="View Orders">📋 Orders</button>
+                    <button class="btn-sm btn-outline" onclick="viewUserOrders(${u.id},'${(u.name||'User').replace(/'/g,'')}')" title="View Orders">📋 History</button>
                     <button class="btn-sm ${u.is_blocked ? 'btn-success' : 'btn-amber'}" onclick="toggleBlockUser(${u.id})">${u.is_blocked ? 'Unblock' : 'Block'}</button>
                     <button class="btn-sm btn-danger" onclick="deleteUser(${u.id},'${(u.name||'User').replace(/'/g,'')}')">🗑 Delete</button>
                 </div>
@@ -625,18 +647,79 @@ async function loadUsers() {
     `).join('');
 }
 
+async function handlePayLater(sel, userId) {
+    const d = await api('handle_pay_later_approval', { user_id: userId, status: sel.value });
+    toast(d.success?'success':'error', 'Pay Later', d.message);
+}
+
 async function viewUserOrders(userId, name) {
-    document.getElementById('userOrdersTitle').textContent = `Orders — ${name}`;
-    document.getElementById('userOrdersBody').innerHTML = '<tr><td colspan="5">Loading…</td></tr>';
+    document.getElementById('userOrdersTitle').textContent = `Full History — ${name}`;
+    document.getElementById('userOrdersBody').innerHTML = '<tr><td colspan="5"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr>';
+    document.getElementById('userProfileSummary').innerHTML = ''; 
     openModal('userOrdersModal');
+    
     const d = await api('get_user_orders', { user_id: userId });
-    if (!d.success || !d.orders.length) {
+    if (!d.success) {
+        document.getElementById('userOrdersBody').innerHTML = '<tr><td colspan="5"><div class="no-data">Failed to load.</div></td></tr>';
+        return;
+    }
+
+    const u = d.user;
+    document.getElementById('userProfileSummary').innerHTML = `
+        <div class="stat-card" style="padding:1rem;"><div class="label">Total Paid</div><div class="value" style="color:#10b981;font-size:1.5rem">₹${d.total_paid}</div></div>
+        <div class="stat-card" style="padding:1rem;"><div class="label">Remaining Due</div><div class="value" style="color:#ef4444;font-size:1.5rem">₹${d.total_due}</div></div>
+        <div class="stat-card" style="padding:1rem;"><div class="label">Pay Later Plan</div><div class="value" style="font-size:1.2rem;color:#6366f1;">${u.pay_later_plan !== 'NONE' ? u.pay_later_plan.replace('PAY_LATER_','Every ') + ' Orders' : 'None'}</div></div>
+        <div class="stat-card" style="padding:1rem;"><div class="label">Total Orders</div><div class="value" style="font-size:1.5rem">${d.orders.length}</div></div>
+    `;
+
+    if (!d.orders.length) {
         document.getElementById('userOrdersBody').innerHTML = '<tr><td colspan="5"><div class="no-data">No orders found.</div></td></tr>';
         return;
     }
-    document.getElementById('userOrdersBody').innerHTML = d.orders.map(o => `
-        <tr><td>#${o.id}</td><td>₹${o.total_amount}</td><td>${statusBadge(o.status)}</td><td>${o.delivery_name||'—'}</td><td>${new Date(o.created_at).toLocaleDateString()}</td></tr>
-    `).join('');
+
+    const steps = ['pending','picked_up','in_process','out_for_delivery','delivered'];
+    const pNames = ['Pending', 'Picked', 'Washing', 'Out', 'Delivered'];
+    
+    document.getElementById('userOrdersBody').innerHTML = d.orders.map(o => {
+        let timelineLabel = '';
+        if (o.status === 'cancelled') {
+            timelineLabel = '<span class="badge b-red" style="width:100%;text-align:center;display:block;">CANCELLED</span>';
+        } else {
+            let activeIdx = steps.indexOf(o.status);
+            if (activeIdx === -1) activeIdx = 0;
+            timelineLabel = '<div style="display:flex; gap:3px; width:100%; max-width:200px;">';
+            steps.forEach((s, idx) => {
+                const color = idx <= activeIdx ? '#10b981' : '#f1f5f9';
+                timelineLabel += `<div style="flex:1; height:6px; border-radius:4px; background:${color};" title="${pNames[idx]}"></div>`;
+            });
+            timelineLabel += '</div>';
+            timelineLabel += `<div style="font-size:0.75rem; color:#475569; margin-top:4px; font-weight:700;">Current: ${o.status.replace(/_/g,' ').toUpperCase()}</div>`;
+        }
+
+        const payBadge = o.payment_status === 'remaining' ? '<span class="badge b-red" style="padding:0.1rem 0.4rem;font-size:0.7rem">Dues Pending</span>' : '<span class="badge b-green" style="padding:0.1rem 0.4rem;font-size:0.7rem">Fully Paid</span>';
+        
+        return `
+            <tr>
+                <td><strong>#${o.id}</strong></td>
+                <td>${timelineLabel}</td>
+                <td>
+                    <div style="font-size:0.8rem; font-weight:600; color:#1e293b;">
+                        <i class="material-icons-outlined" style="font-size:1rem; vertical-align:middle; color:#6366f1">electric_rickshaw</i> 
+                        ${o.delivery_name||'Unassigned'}
+                    </div>
+                </td>
+                <td>
+                    <div style="font-weight:800; color:#1e293b; font-size:1rem;">₹${o.total_amount}</div>
+                    <div style="font-size:0.75rem; color:#64748b; font-weight:600; margin-bottom:2px">${(o.payment_mode||'COD').replace(/_/g,' ')}</div>
+                    ${payBadge}
+                </td>
+                <td style="font-size:0.8rem; color:#475569">
+                    ${new Date(o.created_at).toLocaleDateString()}<br>
+                    <span style="font-size:0.7rem;color:#94a3b8">${new Date(o.created_at).toLocaleTimeString()}</span>
+                </td>
+            </tr>
+        `;
+    }).join('');
 }
 
 async function toggleBlockUser(userId) {

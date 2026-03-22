@@ -62,18 +62,34 @@ if ($action === 'create_order') {
     }
 
     // 1. Check profile
-    $stmt = $pdo->prepare("SELECT name, shop_address FROM users WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT name, shop_address, pay_later_plan, pay_later_status FROM users WHERE id = ?");
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
     if (empty($user['name']) || empty($user['shop_address'])) {
         respond(false, 'Please complete your profile before creating an order.');
     }
 
-    // 2. Payment lock
+    $paymentMode = in_array(strtoupper($data['payment_mode'] ?? 'COD'), ['COD', 'ONLINE', 'PAY_LATER_4', 'PAY_LATER_8', 'PAY_LATER_12']) ? strtoupper($data['payment_mode']) : 'COD';
+
+    // 2. Payment lock logic based on user's authorized mode
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM payments p JOIN orders o ON p.order_id = o.id WHERE p.user_id = ? AND p.status = 'remaining' AND o.status = 'delivered'");
     $stmt->execute([$userId]);
-    if ($stmt->fetchColumn() >= 4) {
-        respond(false, 'You have 4 unpaid delivered orders. Please clear dues before creating new orders.');
+    $unpaidCount = $stmt->fetchColumn();
+
+    if (strpos($paymentMode, 'PAY_LATER') !== false) {
+        if ($user['pay_later_status'] !== 'approved' || $user['pay_later_plan'] !== $paymentMode) {
+            respond(false, "You are not approved for the $paymentMode plan. Defaulting to Cash on Delivery. Please request access from profile or select Pay Now/COD.");
+        }
+        $limit = (int)str_replace('PAY_LATER_', '', $paymentMode);
+        
+        if ($unpaidCount >= $limit) {
+            respond(false, "You have reached your limit of $limit unpaid delivered orders. Please clear dues before creating new orders.");
+        }
+    } else {
+        // Default limit of 4 on normal COD orders to prevent unlimited free stuff
+        if ($unpaidCount >= 4 && $paymentMode === 'COD') {
+            respond(false, "You have 4 unpaid delivered orders. Please clear dues before creating new Cash on Delivery orders.");
+        }
     }
 
     try {
@@ -154,7 +170,7 @@ if ($action === 'create_order') {
         }
 
         // --- Insert payment ---
-        $pdo->prepare("INSERT INTO payments (user_id, order_id, payment_mode, status, amount) VALUES (?, ?, 'COD', 'remaining', ?)")->execute([$userId, $orderId, $totalAmount]);
+        $pdo->prepare("INSERT INTO payments (user_id, order_id, payment_mode, status, amount) VALUES (?, ?, ?, 'remaining', ?)")->execute([$userId, $orderId, $paymentMode, $totalAmount]);
 
         // --- Coupon usage ---
         if ($appliedCouponId) {
@@ -306,6 +322,22 @@ if ($action === 'request_return') {
     } else {
         respond(false, 'Failed to upload photo.');
     }
+}
+
+// --- REQUEST PAY LATER PLAN ---
+if ($action === 'request_pay_later_plan') {
+    $stmt = $pdo->prepare("SELECT pay_later_status FROM users WHERE id = ?");
+    $stmt->execute([$userId]);
+    $currentUser = $stmt->fetch();
+    
+    if ($currentUser['pay_later_status'] === 'approved') {
+        respond(false, 'You already have an approved plan. Contact support to change it.');
+    }
+    
+    $stmt = $pdo->prepare("UPDATE users SET pay_later_status = 'pending_approval' WHERE id = ?");
+    $stmt->execute([$userId]);
+    
+    respond(true, 'Pay Later request submitted to admin for approval!');
 }
 
 respond(false, 'Invalid action specified in api/orders.php');
