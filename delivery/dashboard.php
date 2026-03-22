@@ -219,24 +219,7 @@ $partnerName = $_SESSION['name'] ?? 'Partner';
 
 <!-- ══════════ MODALS ══════════ -->
 
-<!-- OTP Modal -->
-<div class="modal-overlay" id="otpModal">
-    <div class="modal-box">
-        <button class="modal-close" onclick="closeModal('otpModal')">✕</button>
-        <div class="modal-title">🔐 Complete Delivery (OTP)</div>
-        <div class="modal-sub">Ask the customer for the 6-digit PIN shown on their dashboard.</div>
-        <input type="hidden" id="otpOrderId">
-        <div class="form-group">
-            <label>Enter Customer OTP</label>
-            <input type="text" id="otpInput" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'')" placeholder="e.g. 123456" style="font-size:1.5rem; text-align:center; letter-spacing:8px; font-weight:800;">
-        </div>
-        <div class="modal-actions">
-            <button class="btn-action btn-otp" style="flex:1; justify-content:center;" onclick="submitOTP()" id="btnSubmitOtp">✓ Verify & Complete</button>
-            <button class="btn-action btn-ghost" onclick="closeModal('otpModal')">Cancel</button>
-        </div>
-        <div class="form-msg" id="otpMsg"></div>
-    </div>
-</div>
+
 
 <!-- QR Modal -->
 <div class="modal-overlay" id="qrModal">
@@ -385,7 +368,6 @@ function renderCard(o, type) {
         statusBadge = '<span class="badge b-blue">Out for Delivery</span>';
         actions = `
             <button class="btn-action btn-qr" onclick="openQRModal(${o.id})"><i class="material-icons-outlined" style="font-size:16px">qr_code_scanner</i> Scan QR</button>
-            <button class="btn-action btn-otp" onclick="openOTPModal(${o.id})"><i class="material-icons-outlined" style="font-size:16px">password</i> Enter OTP</button>
             <button class="btn-action btn-bypass" onclick="openBypassModal(${o.id})"><i class="material-icons-outlined" style="font-size:16px">camera_alt</i> Bypass</button>
         `;
     } else if (type === 'completed') {
@@ -447,24 +429,7 @@ async function submitReady() {
     btn.textContent = '✓ Mark Ready'; btn.disabled = false;
 }
 
-function openOTPModal(orderId) {
-    document.getElementById('otpOrderId').value = orderId;
-    document.getElementById('otpInput').value = '';
-    document.getElementById('otpMsg').style.display = 'none';
-    openModal('otpModal');
-}
-async function submitOTP() {
-    const orderId = document.getElementById('otpOrderId').value;
-    const otp = document.getElementById('otpInput').value;
-    const btn = document.getElementById('btnSubmitOtp');
-    const msg = document.getElementById('otpMsg');
-    if (!otp) { msg.textContent = 'Please enter the OTP.'; msg.style.color = '#ef4444'; msg.style.display = 'block'; return; }
-    btn.textContent = 'Verifying…'; btn.disabled = true; msg.style.display = 'none';
-    const d = await api('complete_delivery_otp', { order_id: orderId, otp });
-    msg.textContent = d.message; msg.style.color = d.success ? '#10b981' : '#ef4444'; msg.style.display = 'block';
-    if (d.success) setTimeout(()=>{ closeModal('otpModal'); loadSection('deliveries'); loadSection('completed'); loadStats(); }, 1200);
-    btn.textContent = '✓ Verify & Complete'; btn.disabled = false;
-}
+
 
 function openBypassModal(orderId) {
     document.getElementById('bypassOrderId').value = orderId;
@@ -521,8 +486,18 @@ function openQRModal(orderId) {
     });
 }
 function closeQRModal() {
-    if (qrScanner) { qrScanner.stop().catch(()=>{}).finally(()=>{ qrScanner.clear(); qrScanner=null; }); }
     closeModal('qrModal');
+    if (qrScanner) { 
+        try {
+            qrScanner.stop().catch(()=>{}).finally(()=>{ 
+                try { qrScanner.clear(); } catch(e){} 
+                qrScanner=null; 
+            }); 
+        } catch(e) {
+            try { qrScanner.clear(); } catch(err){}
+            qrScanner=null;
+        }
+    }
 }
 
 // ── Close on overlay click ──

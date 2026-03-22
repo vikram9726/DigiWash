@@ -775,9 +775,8 @@ document.getElementById('submitOrderBtn')?.addEventListener('click', async () =>
         coupon_code: document.getElementById('couponCode').value,
         payment_mode: document.getElementById('paymentMode').value
     };
-    const d = await apiCall('../api/orders.php','create_order', payload);
 
-    if (d.success) {
+    const processOrderSuccess = (d) => {
         toast('success','Order Placed! 🎉', d.message);
         cart = {}; appliedDiscount = 0;
         document.querySelectorAll('.pc').forEach(c => c.classList.remove('sel'));
@@ -789,17 +788,52 @@ document.getElementById('submitOrderBtn')?.addEventListener('click', async () =>
         document.getElementById('couponFeedback').textContent='';
         document.getElementById('orderInstr').value='';
         btn.innerHTML='<i class="material-icons-outlined" style="font-size:1rem;">local_shipping</i> Request Pickup';
-        btn.disabled = true;
+        btn.disabled = false;
         fetchStats();
-        
-        if (payload.payment_mode === 'ONLINE') {
-            toast('success','Order Placed! 🎉', 'Initiating payment gateway...');
-            switchTab('payments', document.getElementById('nav-payments'));
-            initiatePayment(d.order_id, document.getElementById('cartGrand').textContent.replace('₹',''));
-        } else {
-            switchTab('history', document.getElementById('nav-history'));
+        switchTab('history', document.getElementById('nav-history'));
+    };
+
+    if (payload.payment_mode === 'ONLINE') {
+        const amt = parseFloat(document.getElementById('cartGrand').textContent.replace('₹',''));
+        const initRes = await apiCall('../api/payments.php', 'create_rzp_precheckout_order', { amount: amt });
+        if (!initRes.success) {
+            btn.innerHTML='<i class="material-icons-outlined" style="font-size:1rem;">local_shipping</i> Request Pickup';
+            btn.disabled = false;
+            return toast('error', 'Gateway Error', initRes.message);
         }
-    } else {
+        
+        const rzpOpts = {
+            key: initRes.key,
+            amount: initRes.amount,
+            order_id: initRes.rzp_order_id,
+            name: 'DigiWash Laundry',
+            description: 'Online Payment pre-checkout',
+            handler: async (res) => {
+                btn.innerHTML = 'Verifying...';
+                payload.razorpay_payment_id = res.razorpay_payment_id;
+                payload.razorpay_order_id = res.razorpay_order_id;
+                payload.razorpay_signature = res.razorpay_signature;
+                
+                const d = await apiCall('../api/orders.php','create_order', payload);
+                if (d.success) processOrderSuccess(d);
+                else { toast('error','Transaction Verified, Order Failed', d.message); btn.disabled=false; btn.innerHTML='<i class="material-icons-outlined" style="font-size:1rem;">local_shipping</i> Request Pickup'; }
+            },
+            prefill: { name:'<?= $userName ?>', contact:'<?= $userPhone ?>' },
+            theme: { color:'#6366f1' }
+        };
+        const rzp = new Razorpay(rzpOpts);
+        rzp.on('payment.failed', function (r){
+            btn.innerHTML='<i class="material-icons-outlined" style="font-size:1rem;">local_shipping</i> Request Pickup';
+            btn.disabled=false;
+            toast('error', 'Payment Cancelled', 'Please try again or use another payment method.');
+        });
+        rzp.open();
+        return;
+    }
+
+    const d = await apiCall('../api/orders.php','create_order', payload);
+    if (d.success) processOrderSuccess(d);
+    else {
         toast('error','Order Failed', d.message);
         btn.innerHTML='<i class="material-icons-outlined" style="font-size:1rem;">local_shipping</i> Request Pickup';
         btn.disabled = false;
@@ -838,6 +872,7 @@ async function loadOrders(type, tabEl) {
                         <div class="order-meta">₹${o.total_amount} · ${new Date(o.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
                     </div>
                     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        <a href="../api/invoice.php?action=download_order_pdf&order_id=${o.id}" target="_blank" class="btn btn-sm btn-ghost" style="border:1px solid #cbd5e1;"><i class="material-icons-outlined" style="font-size:.9rem;margin-right:4px;">receipt_long</i> Invoice</a>
                         ${statusBadge(o.status)}
                         ${o.status === 'delivered' ? `<button class="btn btn-sm btn-danger" onclick="openReturnModal(${o.id})">↩ Return</button>` : ''}
                         ${o.status === 'pending' ? `<button class="btn btn-sm btn-outline" style="border-color:var(--danger);color:var(--danger);" onclick="cancelOrder(${o.id})">✕ Cancel</button>` : ''}
@@ -879,7 +914,7 @@ async function loadPayments(type, tabEl) {
         apiCall('../api/invoice.php','get_invoices',{})
     ]);
 
-    const myPayments = (d.success && d.payments) ? d.payments : [];
+    const myPayments = (d.success && d.payments) ? d.payments.filter(p => !p.invoice_id) : [];
     const myInvoices = (invRes.success && invRes.invoices) ? invRes.invoices.filter(i => (type==='remaining'?i.status==='unpaid':i.status==='paid')) : [];
 
     if (myPayments.length === 0 && myInvoices.length === 0) {
@@ -891,19 +926,37 @@ async function loadPayments(type, tabEl) {
 
     // 1. Custom Invoices Top Block
     if (myInvoices.length > 0) {
-        html += `<div style="font-weight:800;font-size:0.9rem;margin-bottom:10px;text-transform:uppercase;color:var(--muted);letter-spacing:1px;margin-top:5px;">Custom Invoices</div>`;
-        html += myInvoices.map(i => `
-            <div class="due-card" style="border-left:4px solid #f59e0b;">
-                <div>
-                    <div class="due-info">${i.invoice_no}</div>
-                    <div style="font-size:.78rem;color:var(--muted);">${i.description} · ${new Date(i.created_at).toLocaleDateString('en-IN')}</div>
+        html += `<div style="font-weight:800;font-size:0.9rem;margin-bottom:10px;text-transform:uppercase;color:var(--muted);letter-spacing:1px;margin-top:5px;">Combined Billing Invoices</div>`;
+        html += myInvoices.map(i => {
+            const isPayable = (i.orders||[]).every(o => ['delivered', 'cancelled'].includes(o.status));
+            return `
+            <div class="due-card" style="border-left:4px solid #f59e0b;flex-direction:column;align-items:stretch;">
+                <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+                    <div>
+                        <div class="due-info">${i.invoice_no}</div>
+                        <div style="font-size:.78rem;color:var(--muted);">${i.description} · ${new Date(i.created_at).toLocaleDateString('en-IN')}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                        <div class="due-amount" style="color:#b45309;">₹${parseFloat(i.amount).toFixed(2)}</div>
+                        <a href="../api/invoice.php?action=download_pdf&id=${i.id}" target="_blank" class="btn btn-sm btn-outline" style="padding:2px 8px;"><i class="material-icons-outlined" style="font-size:1.1rem;margin-right:2px;">picture_as_pdf</i> PDF</a>
+                        ${type === 'remaining' ? (isPayable ? `<button class="btn btn-sm btn-primary" style="background:#f59e0b;border-color:#f59e0b;padding:2px 10px;" onclick="payInvoice(${i.id})">Pay</button>` : `<span class="badge" style="background:#64748b;font-size:.65rem;color:#fff;">Wait for Delivery</span>`) : `<span class="badge b-green">Paid</span>`}
+                        <button class="btn btn-sm btn-ghost" style="padding:4px;" onclick="const e=document.getElementById('inv-ords-${i.id}'); e.style.display=e.style.display==='none'?'block':'none'"><i class="material-icons-outlined" style="font-size:1.2rem;">expand_more</i></button>
+                    </div>
                 </div>
-                <div style="display:flex;align-items:center;gap:1rem;">
-                    <div class="due-amount" style="color:#b45309;">₹${parseFloat(i.amount).toFixed(2)}</div>
-                    ${type === 'remaining' ? `<button class="btn btn-sm btn-primary" style="background:#f59e0b;border-color:#f59e0b;" onclick="payInvoice(${i.id})">Pay</button>` : `<span class="badge b-green">Paid</span>`}
+                <div id="inv-ords-${i.id}" style="display:none;margin-top:12px;padding-top:12px;border-top:1px dashed #cbd5e1;font-size:0.8rem;">
+                    <div style="font-weight:700;margin-bottom:8px;color:#475569;">Orders Included:</div>
+                    ${(i.orders||[]).map(o => `
+                        <div style="display:flex;justify-content:space-between;background:#f8fafc;padding:6px 10px;border-radius:6px;margin-bottom:6px;border:1px solid #e2e8f0;">
+                            <div><b>Order #${o.id}</b> <span style="color:#94a3b8;margin-left:6px;">${new Date(o.created_at).toLocaleDateString()}</span></div>
+                            <div style="display:flex;gap:10px;">
+                                <span style="color:#10b981;font-weight:800;">₹${parseFloat(o.amount||0).toFixed(2)}</span>
+                                <span class="badge" style="background:#cbd5e1;color:#334155;font-size:.65rem;padding:2px 6px;">${o.status.replace(/_/g,' ').toUpperCase()}</span>
+                            </div>
+                        </div>
+                    `).join('')}
                 </div>
             </div>
-        `).join('');
+        `;}).join('');
     }
 
     // 2. Main Order Balances
@@ -935,12 +988,12 @@ async function loadPayments(type, tabEl) {
         const anyInTransit = plPaymentsRef.some(p => p.order_status !== 'delivered' && p.order_status !== 'cancelled');
 
         html += myPayments.map(p => {
-            let btnHtml = '';
             if (type === 'remaining') {
-                if (p.payment_mode.startsWith('PAY_LATER') && anyInTransit) {
-                    btnHtml = `<button class="btn btn-sm" style="background:#e2e8f0;color:#94a3b8;cursor:not-allowed;" disabled>Locked</button>`;
-                } else {
+                const isDirectOnline = p.payment_mode === 'ONLINE';
+                if (isDirectOnline || ['delivered', 'cancelled'].includes(p.order_status)) {
                     btnHtml = `<button class="btn btn-sm btn-primary" onclick="initiatePayment(${p.order_id},${p.amount})">Pay</button>`;
+                } else {
+                    btnHtml = `<button class="btn btn-sm" style="background:#e2e8f0;color:#94a3b8;cursor:not-allowed;" disabled>Wait for Delivery</button>`;
                 }
             } else {
                 btnHtml = `<span class="badge b-green">Paid</span>`;

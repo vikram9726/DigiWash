@@ -153,9 +153,9 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
         <div class="menu-item" id="nav-products" onclick="switchTab('products',this)">
             <i class="material-icons-outlined">inventory_2</i> Products
         </div>
-        <div class="sidebar-section">Marketing & Billing</div>
+        <div class="sidebar-section">Billing & Marketing</div>
         <div class="menu-item" id="nav-invoices" onclick="switchTab('invoices',this)">
-            <i class="material-icons-outlined">receipt</i> Send Invoices
+            <i class="material-icons-outlined">receipt_long</i> Invoices & Setup
         </div>
         <div class="menu-item" id="nav-marketing" onclick="switchTab('marketing',this)">
             <i class="material-icons-outlined">campaign</i> Coupons & Notifs
@@ -270,35 +270,47 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             </div>
         </section>
 
-        <!-- ══ INVOICES ══ -->
+        <!-- ══ INVOICES & SETTINGS ══ -->
         <section id="invoices" class="section-content">
-            <div class="top-bar"><div class="page-title">Custom <span>Invoices</span></div></div>
-            <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:1.5rem;">
+            <div class="top-bar"><div class="page-title">Billing <span>Tracker & Setup</span></div></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
                 <div class="panel">
-                    <div class="panel-header"><div class="panel-title">Generate New Invoice</div></div>
-                    <form id="invoiceForm">
-                        <div style="margin-bottom:1rem;">
-                            <label style="display:block;margin-bottom:.5rem;font-weight:600;font-size:.9rem;">Select User</label>
-                            <select id="invUser" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);" required>
-                                <option value="">Loading Users...</option>
-                            </select>
-                        </div>
-                        <div style="margin-bottom:1rem;">
-                            <label style="display:block;margin-bottom:.5rem;font-weight:600;font-size:.9rem;">Amount (₹)</label>
-                            <input type="number" step="0.01" id="invAmount" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);" placeholder="e.g. 500" required>
-                        </div>
-                        <div style="margin-bottom:1.5rem;">
-                            <label style="display:block;margin-bottom:.5rem;font-weight:600;font-size:.9rem;">Description</label>
-                            <input type="text" id="invDesc" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);" placeholder="e.g. Dry Cleaning Addon" required>
-                        </div>
-                        <button type="submit" class="btn-sm btn-primary" id="btnGenInv" style="width:100%;justify-content:center;padding:12px;">Send Invoice</button>
-                    </form>
-                </div>
-                <div class="panel">
-                    <div class="panel-header"><div class="panel-title">Issued Invoices</div></div>
+                    <div class="panel-header"><div class="panel-title">Combined Invoices (Tracker)</div></div>
                     <div id="adminInvoicesList" style="max-height:400px;overflow-y:auto;padding-right:5px;">
                         <div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div>
                     </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><div class="panel-title">Receipt Design Settings</div></div>
+                    <form id="receiptForm">
+                        <div style="margin-bottom:1rem;">
+                            <label style="display:block;margin-bottom:.5rem;font-weight:600;font-size:.9rem;">Store Name</label>
+                            <input type="text" id="rs_store_name" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);" required>
+                        </div>
+                        <div style="margin-bottom:1rem;">
+                            <label style="display:block;margin-bottom:.5rem;font-weight:600;font-size:.9rem;">Tagline</label>
+                            <input type="text" id="rs_tagline" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);">
+                        </div>
+                        <div style="margin-bottom:1rem;">
+                            <label style="display:block;margin-bottom:.5rem;font-weight:600;font-size:.9rem;">Address</label>
+                            <textarea id="rs_address" rows="2" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);" required></textarea>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:1rem;">
+                            <div>
+                                <label style="display:block;margin-bottom:.5rem;font-weight:600;font-size:.9rem;">Phone</label>
+                                <input type="text" id="rs_phone" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);" required>
+                            </div>
+                            <div>
+                                <label style="display:block;margin-bottom:.5rem;font-weight:600;font-size:.9rem;">Email</label>
+                                <input type="text" id="rs_email" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);" required>
+                            </div>
+                        </div>
+                        <div style="margin-bottom:1rem;">
+                            <label style="display:block;margin-bottom:.5rem;font-weight:600;font-size:.9rem;">GST Number</label>
+                            <input type="text" id="rs_gst_no" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);">
+                        </div>
+                        <button type="submit" class="btn-sm btn-primary" id="btnSaveRs" style="width:100%;justify-content:center;padding:12px;">Save Settings</button>
+                    </form>
                 </div>
             </div>
         </section>
@@ -358,7 +370,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 
         <div class="panel-title" style="margin-bottom:1rem; font-size:1rem;">Orders Tracking & Payments</div>
         <div class="tbl-wrap"><table>
-            <thead><tr><th>Order #</th><th>Timeline Tracking</th><th>Partner</th><th>Payment Split</th><th>Date</th></tr></thead>
+            <thead><tr><th>Order #</th><th>Timeline Tracking</th><th>Partner</th><th>Payment Split</th><th>Date</th><th>Action</th></tr></thead>
             <tbody id="userOrdersBody"></tbody>
         </table></div>
     </div>
@@ -551,6 +563,10 @@ async function switchTab(id, el) {
     if (id === 'partners') loadPartners();
     if (id === 'returns') loadReturns('all');
     if (id === 'products') loadProducts();
+    if (id === 'invoices') {
+        loadAdminInvoices();
+        loadReceiptSettings();
+    }
 }
 
 // ── Toast ──
@@ -656,7 +672,7 @@ async function loadUsers() {
             <td>₹${parseFloat(u.total_spent||0).toFixed(0)}</td>
             <td>
                 ${u.pay_later_status === 'approved' ? `
-                    <div style="font-size:0.75rem;font-weight:700;color:var(--success);">✅ ${u.pay_later_plan.replace('PAY_LATER_','Pay after ')}</div>
+                    <div style="font-size:0.75rem;font-weight:700;color:var(--success);">✅ ${(u.pay_later_plan||'').replace('PAY_LATER_','Pay after ')}</div>
                     <button class="btn-sm btn-danger" onclick="revokePayLater(${u.id})" style="margin-top:4px;font-size:0.65rem;padding:2px 6px;">Remove</button>
                 ` : u.pay_later_status === 'pending_approval' ? `
                     <div style="font-size:0.75rem;font-weight:700;color:var(--amber);">Pending Request</div>
@@ -762,6 +778,9 @@ async function viewUserOrders(userId, name) {
                 <td style="font-size:0.8rem; color:#475569">
                     ${new Date(o.created_at).toLocaleDateString()}<br>
                     <span style="font-size:0.7rem;color:#94a3b8">${new Date(o.created_at).toLocaleTimeString()}</span>
+                </td>
+                <td>
+                    <a href="../api/invoice.php?action=download_order_pdf&order_id=${o.id}" target="_blank" class="btn-sm btn-outline" style="border-color:#cbd5e1;padding:2px 8px;font-size:.7rem;"><i class="material-icons-outlined" style="font-size:0.8rem;vertical-align:middle;">picture_as_pdf</i> PDF</a>
                 </td>
             </tr>
         `;
@@ -1217,39 +1236,69 @@ async function deleteProduct(id, name) {
     else toast('error','Error',d.message);
 }
 
-// ── Invoices ─────────────────────────────
+// ── INVOICES & CONFIGS ────────────────
 async function loadAdminInvoices() {
     const el = document.getElementById('adminInvoicesList');
     const d = await fetch('../api/invoice.php',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'get_invoices'})}).then(r=>r.json()).catch(()=>({}));
-    if(!d.success || !d.invoices?.length) { el.innerHTML='<div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>No invoices found.</div>'; return; }
+    if(!d.success || !d.invoices?.length) { el.innerHTML='<div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>No invoices tracked yet.</div>'; return; }
     el.innerHTML = d.invoices.map(i => `
-        <div style="padding:15px;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;background:#f8fafc;">
-            <div style="display:flex;justify-content:space-between;font-weight:800;font-size:.9rem;margin-bottom:4px;">
-                <span>${i.invoice_no}</span>
-                <span class="badge ${i.status==='paid'?'b-green':'b-red'}">${i.status.toUpperCase()}</span>
+        <div style="padding:15px;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;background:#f8fafc;display:flex;flex-direction:column;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <div style="font-weight:800;font-size:.9rem;color:#0f172a;margin-bottom:2px;">${i.invoice_no}</div>
+                    <div style="font-size:.8rem;color:var(--muted);">${i.user_name}</div>
+                    <div style="font-size:.85rem;color:#0f172a;margin-top:4px;"><b>₹${parseFloat(i.amount).toFixed(2)}</b></div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;">
+                    <span class="badge ${i.status==='paid'?'b-green':'b-red'}">${i.status.toUpperCase()}</span>
+                    <div style="display:flex;gap:5px;">
+                        <a href="../api/invoice.php?action=download_pdf&id=${i.id}" target="_blank" class="btn btn-sm btn-outline" style="border-color:#cbd5e1;padding:2px 8px;font-size:.7rem;">View PDF</a>
+                        <button class="btn btn-sm btn-ghost" style="padding:2px 6px;" onclick="const e=document.getElementById('a-inv-${i.id}'); e.style.display=e.style.display==='none'?'block':'none'"><i class="material-icons-outlined" style="font-size:1rem;">expand_more</i></button>
+                    </div>
+                </div>
             </div>
-            <div style="font-weight:600;color:#334155;">${i.user_name} <span style="font-weight:400;color:var(--muted);">(${i.phone})</span></div>
-            <div style="font-size:.85rem;color:var(--muted);margin-top:6px;display:flex;justify-content:space-between;">
-                <span>${i.description}</span>
-                <span style="font-weight:800;color:#0f172a;font-size:1rem;">₹${parseFloat(i.amount).toFixed(2)}</span>
+            <div id="a-inv-${i.id}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed #cbd5e1;font-size:0.8rem;">
+                <div style="font-weight:700;margin-bottom:6px;color:#475569;">Included Legacy Orders:</div>
+                ${(i.orders||[]).map(o => `
+                    <div style="display:flex;justify-content:space-between;background:#fff;padding:4px 8px;border-radius:4px;margin-bottom:4px;border:1px solid #e2e8f0;">
+                        <span>Order #${o.id}</span>
+                        <span>₹${parseFloat(o.amount||0).toFixed(2)} — <b style="text-transform:uppercase;color:#64748b;">${o.status.replace(/_/g,' ')}</b></span>
+                    </div>
+                `).join('')}
             </div>
         </div>
     `).join('');
 }
 
-document.getElementById('invoiceForm')?.addEventListener('submit', async e => {
+async function loadReceiptSettings() {
+    const d = await fetch('../api/invoice.php',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'get_receipt_settings'})}).then(r=>r.json()).catch(()=>({}));
+    if(d.success && d.settings) {
+        document.getElementById('rs_store_name').value = d.settings.store_name||'';
+        document.getElementById('rs_tagline').value = d.settings.tagline||'';
+        document.getElementById('rs_address').value = d.settings.address||'';
+        document.getElementById('rs_phone').value = d.settings.phone||'';
+        document.getElementById('rs_email').value = d.settings.email||'';
+        document.getElementById('rs_gst_no').value = d.settings.gst_no||'';
+    }
+}
+
+document.getElementById('receiptForm')?.addEventListener('submit', async e => {
     e.preventDefault();
-    const btn = document.getElementById('btnGenInv');
-    btn.disabled=true; btn.textContent='Generating...';
+    const btn = document.getElementById('btnSaveRs');
+    btn.disabled=true; btn.textContent='Saving...';
+    const settings = {
+        store_name: document.getElementById('rs_store_name').value,
+        tagline: document.getElementById('rs_tagline').value,
+        address: document.getElementById('rs_address').value,
+        phone: document.getElementById('rs_phone').value,
+        email: document.getElementById('rs_email').value,
+        gst_no: document.getElementById('rs_gst_no').value
+    };
     const d = await fetch('../api/invoice.php',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({
-        action:'create_invoice',
-        user_id: document.getElementById('invUser').value,
-        amount: document.getElementById('invAmount').value,
-        description: document.getElementById('invDesc').value
+        action:'save_receipt_settings', settings
     })}).then(r=>r.json()).catch(()=>({success:false,message:'Error'}));
-    toast(d.success?'success':'error', 'Invoice', d.message);
-    btn.disabled=false; btn.textContent='Send Invoice';
-    if(d.success) { e.target.reset(); loadAdminInvoices(); }
+    toast(d.success?'success':'error', 'Settings', d.message);
+    btn.disabled=false; btn.textContent='Save Settings';
 });
 
 // ── Logout ──

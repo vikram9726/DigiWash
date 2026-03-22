@@ -167,49 +167,7 @@ if ($action === 'mark_ready') {
     }
 }
 
-// --- FULFILL DELIVERY (OTP) ---
-if ($action === 'complete_delivery_otp') {
-    $orderId = $data['order_id'] ?? 0;
-    $otp = htmlspecialchars(strip_tags($data['otp'] ?? ''), ENT_QUOTES, 'UTF-8');
 
-    if (empty($otp)) respond(false, 'OTP is required.');
-
-    // Fetch order to verify OTP
-    // For this simulation, we'll assume the OTP generated and sent to the user matches '123456' 
-    // OR we check the database if we actually stored one. Let's assume a hardcoded '123456' for the demo if not set.
-    $stmt = $pdo->prepare("SELECT delivery_otp FROM orders WHERE id = ? AND delivery_id = ? AND status = 'out_for_delivery'");
-    $stmt->execute([$orderId, $deliveryId]);
-    $order = $stmt->fetch();
-
-    if (!$order) {
-        respond(false, 'Invalid order or order is not ready for delivery.');
-    }
-
-    $actualOtp = $order['delivery_otp'] ?: '123456'; // Fallback for DEMO purposes
-
-    if ($otp !== $actualOtp) {
-        respond(false, 'Incorrect OTP. Handover failed.');
-    }
-
-    try {
-        $pdo->beginTransaction();
-        // Update Order
-        $stmt = $pdo->prepare("UPDATE orders SET status = 'delivered', updated_at = NOW() WHERE id = ?");
-        $stmt->execute([$orderId]);
-        
-        // Trigger Notification
-        $stmtUser = $pdo->prepare("SELECT user_id FROM orders WHERE id = ?");
-        $stmtUser->execute([$orderId]);
-        $ownerId = $stmtUser->fetchColumn();
-        sendPushNotification($pdo, $ownerId, "Order Delivered", "Your laundry has been delivered. Thank you!");
-
-        $pdo->commit();
-        respond(true, 'Delivery completed successfully via OTP!');
-    } catch (\Exception $e) {
-        $pdo->rollBack();
-        respond(false, 'Database Error: ' . $e->getMessage());
-    }
-}
 
 // --- BYPASS DELIVERY (PHOTO UPLOAD) ---
 if ($action === 'complete_delivery_qr') {

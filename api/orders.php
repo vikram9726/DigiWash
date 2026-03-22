@@ -192,9 +192,49 @@ if ($action === 'create_order') {
 
         $totalAmount = max(0, $baseAmount - $discount);
 
+        $paymentState = 'remaining';
+        $transactionId = null;
+
+        if ($paymentMode === 'ONLINE') {
+            $r_payId = $data['razorpay_payment_id'] ?? '';
+            $r_ordId = $data['razorpay_order_id'] ?? '';
+            $r_sign  = $data['razorpay_signature'] ?? '';
+
+            if (!$r_payId) {
+                $pdo->rollBack(); respond(false, 'Missing Razorpay payment gateway hash.');
+            }
+
+            if ($r_sign) {
+                $keySecret = getenv('RAZORPAY_KEY_SECRET');
+                $expectedSig = hash_hmac('sha256', $r_ordId . '|' . $r_payId, $keySecret);
+                if (!hash_equals($expectedSig, $r_sign)) {
+                    $pdo->rollBack(); respond(false, 'Payment verification failed (Invalid offline signature).');
+                }
+            } else {
+                // Fallback: Directly pull payment metadata from Razorpay Core API over cURL 
+                $rID = getenv('RAZORPAY_KEY_ID');
+                $rSec = getenv('RAZORPAY_KEY_SECRET');
+                $ch = curl_init("https://api.razorpay.com/v1/payments/$r_payId");
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_USERPWD, $rID . ':' . $rSec);
+                $rzpData = json_decode(curl_exec($ch), true);
+                curl_close($ch);
+
+                if (!isset($rzpData['status']) || !in_array($rzpData['status'], ['authorized', 'captured'])) {
+                    $pdo->rollBack(); respond(false, 'Payment transaction was not authorized or captured at Razorpay.');
+                }
+                if (isset($rzpData['amount']) && round($totalAmount * 100) != $rzpData['amount']) {
+                    $pdo->rollBack(); respond(false, 'Payment parameter mismatch error.');
+                }
+            }
+            
+            $paymentState = 'completed';
+            $transactionId = $r_payId;
+        }
+
         // --- Insert order ---
-        $stmt = $pdo->prepare("INSERT INTO orders (user_id, status, total_amount, payment_status, instructions) VALUES (?, 'pending', ?, 'remaining', ?)");
-        $stmt->execute([$userId, $totalAmount, $instructions]);
+        $stmt = $pdo->prepare("INSERT INTO orders (user_id, status, total_amount, payment_status, instructions) VALUES (?, 'pending', ?, ?, ?)");
+        $stmt->execute([$userId, $totalAmount, $paymentState, $instructions]);
         $orderId = $pdo->lastInsertId();
 
         // --- Insert order items (if product-based) ---
@@ -206,7 +246,7 @@ if ($action === 'create_order') {
         }
 
         // --- Insert payment ---
-        $pdo->prepare("INSERT INTO payments (user_id, order_id, payment_mode, status, amount) VALUES (?, ?, ?, 'remaining', ?)")->execute([$userId, $orderId, $paymentMode, $totalAmount]);
+        $pdo->prepare("INSERT INTO payments (user_id, order_id, payment_mode, status, amount) VALUES (?, ?, ?, ?, ?)")->execute([$userId, $orderId, $paymentMode, $paymentState, $totalAmount]);
 
         // --- Coupon usage ---
         if ($appliedCouponId) {
@@ -214,6 +254,20 @@ if ($action === 'create_order') {
         }
 
         $pdo->commit();
+        
+        // Asynchronously triggering auto-generation via fast cURL 
+        $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http";
+        $url = $protocol . "://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['REQUEST_URI']) . "/invoice.php";
+        
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['action' => 'auto_generate']));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 1);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        @curl_exec($ch);
+        @curl_close($ch);
+
         respond(true, 'Order placed! A delivery partner will be assigned soon.', ['order_id' => $orderId]);
     } catch (\Exception $e) {
         $pdo->rollBack();
@@ -282,7 +336,7 @@ if ($action === 'cancel_order') {
 if ($action === 'get_payments') {
     $type = $data['type'] ?? 'remaining'; // 'remaining' or 'completed'
 
-    $stmt = $pdo->prepare("SELECT p.*, o.total_amount, o.status AS order_status FROM payments p JOIN orders o ON p.order_id = o.id WHERE p.user_id = ? AND p.status = ? ORDER BY p.created_at DESC");
+    $stmt = $pdo->prepare("SELECT p.*, o.total_amount, o.status AS order_status, o.invoice_id FROM payments p JOIN orders o ON p.order_id = o.id WHERE p.user_id = ? AND p.status = ? ORDER BY p.created_at DESC");
     $stmt->execute([$userId, $type]);
     $payments = $stmt->fetchAll();
 

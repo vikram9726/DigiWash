@@ -33,6 +33,31 @@ if (empty($razorpayKeyId) || strpos($razorpayKeyId, 'replace_this') !== false) {
     respond(false, 'Razorpay is not configured on the server yet.');
 }
 
+// --- CREATE PRE-CHECKOUT RAZORPAY ORDER ---
+if ($action === 'create_rzp_precheckout_order') {
+    $amountInPaise = round((float)($data['amount'] ?? 0) * 100);
+    if ($amountInPaise <= 0) respond(false, 'Invalid amount.');
+
+    $ch = curl_init('https://api.razorpay.com/v1/orders');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_USERPWD, $razorpayKeyId . ':' . $razorpayKeySecret);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['amount' => $amountInPaise, 'currency' => 'INR']));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    
+    $res = json_decode(curl_exec($ch), true);
+    curl_close($ch);
+
+    if (isset($res['id'])) {
+        respond(true, 'Gateway ready', [
+            'key' => $razorpayKeyId,
+            'amount' => $amountInPaise,
+            'rzp_order_id' => $res['id']
+        ]);
+    }
+    respond(false, 'Failed to connect to Razorpay.');
+}
+
 // --- CREATE RAZORPAY ORDER ---
 if ($action === 'create_rzp_order') {
     $orderId = $data['order_id'] ?? 0;
