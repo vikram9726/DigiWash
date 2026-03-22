@@ -153,7 +153,10 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
         <div class="menu-item" id="nav-products" onclick="switchTab('products',this)">
             <i class="material-icons-outlined">inventory_2</i> Products
         </div>
-        <div class="sidebar-section">Marketing</div>
+        <div class="sidebar-section">Marketing & Billing</div>
+        <div class="menu-item" id="nav-invoices" onclick="switchTab('invoices',this)">
+            <i class="material-icons-outlined">receipt</i> Send Invoices
+        </div>
         <div class="menu-item" id="nav-marketing" onclick="switchTab('marketing',this)">
             <i class="material-icons-outlined">campaign</i> Coupons & Notifs
         </div>
@@ -197,10 +200,6 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
                     <div class="panel-title">All Customers</div>
                     <div class="search-bar">
                         <input type="text" id="userSearch" placeholder="Search name / phone / email…" oninput="loadUsers()">
-                        <select id="userFilter" onchange="loadUsers()">
-                            <option value="all">All Customers</option>
-                            <option value="pay_later">Pay Later Requests</option>
-                        </select>
                     </div>
                 </div>
                 <div class="tbl-wrap">
@@ -267,6 +266,39 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
                         <thead><tr><th>#</th><th>Customer</th><th>Order</th><th>Reason</th><th>Photo</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
                         <tbody id="returnsBody"><tr><td colspan="8"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
                     </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ══ INVOICES ══ -->
+        <section id="invoices" class="section-content">
+            <div class="top-bar"><div class="page-title">Custom <span>Invoices</span></div></div>
+            <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:1.5rem;">
+                <div class="panel">
+                    <div class="panel-header"><div class="panel-title">Generate New Invoice</div></div>
+                    <form id="invoiceForm">
+                        <div style="margin-bottom:1rem;">
+                            <label style="display:block;margin-bottom:.5rem;font-weight:600;font-size:.9rem;">Select User</label>
+                            <select id="invUser" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);" required>
+                                <option value="">Loading Users...</option>
+                            </select>
+                        </div>
+                        <div style="margin-bottom:1rem;">
+                            <label style="display:block;margin-bottom:.5rem;font-weight:600;font-size:.9rem;">Amount (₹)</label>
+                            <input type="number" step="0.01" id="invAmount" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);" placeholder="e.g. 500" required>
+                        </div>
+                        <div style="margin-bottom:1.5rem;">
+                            <label style="display:block;margin-bottom:.5rem;font-weight:600;font-size:.9rem;">Description</label>
+                            <input type="text" id="invDesc" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);" placeholder="e.g. Dry Cleaning Addon" required>
+                        </div>
+                        <button type="submit" class="btn-sm btn-primary" id="btnGenInv" style="width:100%;justify-content:center;padding:12px;">Send Invoice</button>
+                    </form>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><div class="panel-title">Issued Invoices</div></div>
+                    <div id="adminInvoicesList" style="max-height:400px;overflow-y:auto;padding-right:5px;">
+                        <div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -508,7 +540,7 @@ function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 // ── Tab switching ──
-function switchTab(id, el) {
+async function switchTab(id, el) {
     document.querySelectorAll('.section-content').forEach(s => s.classList.remove('active'));
     document.getElementById(id).classList.add('active');
     document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
@@ -608,9 +640,8 @@ function refreshAll() { loadStats(); loadAnalytics(); }
 async function loadUsers() {
     const tbody = document.getElementById('usersBody');
     const search = document.getElementById('userSearch').value;
-    const filter = document.getElementById('userFilter').value;
     tbody.innerHTML = '<tr><td colspan="10"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr>';
-    const d = await api('get_users', { search, filter });
+    const d = await api('get_users', { search });
     if (!d.success || !d.users.length) {
         tbody.innerHTML = '<tr><td colspan="10"><div class="no-data"><i class="material-icons-outlined">people_outline</i>No customers found.</div></td></tr>';
         return;
@@ -624,14 +655,20 @@ async function loadUsers() {
             <td><strong>${u.total_orders}</strong></td>
             <td>₹${parseFloat(u.total_spent||0).toFixed(0)}</td>
             <td>
-                ${u.pay_later_plan !== 'NONE' ? `
-                    <div style="font-size:0.75rem;font-weight:700;color:var(--primary);">${u.pay_later_plan.replace('PAY_LATER_','Pay after ')}</div>
-                    <select style="font-size:0.7rem;padding:2px;border-radius:4px" onchange="handlePayLater(this, ${u.id})">
-                        <option value="locked" ${u.pay_later_status==='locked'?'selected':''}>Locked</option>
-                        <option value="pending_approval" ${u.pay_later_status==='pending_approval'?'selected':''}>Pending</option>
-                        <option value="approved" ${u.pay_later_status==='approved'?'selected':''}>Approved</option>
-                        <option value="declined" ${u.pay_later_status==='declined'?'selected':''}>Declined</option>
+                ${u.pay_later_status === 'approved' ? `
+                    <div style="font-size:0.75rem;font-weight:700;color:var(--success);">✅ ${u.pay_later_plan.replace('PAY_LATER_','Pay after ')}</div>
+                    <button class="btn-sm btn-danger" onclick="revokePayLater(${u.id})" style="margin-top:4px;font-size:0.65rem;padding:2px 6px;">Remove</button>
+                ` : u.pay_later_status === 'pending_approval' ? `
+                    <div style="font-size:0.75rem;font-weight:700;color:var(--amber);">Pending Request</div>
+                    <select style="font-size:0.7rem;padding:2px;border-radius:4px;margin-top:4px;" onchange="assignPayLater(this, ${u.id})">
+                        <option value="" selected disabled>Select to Approve...</option>
+                        <option value="PAY_LATER_4">Approve 4 Orders</option>
+                        <option value="PAY_LATER_8">Approve 8 Orders</option>
+                        <option value="PAY_LATER_12">Approve 12 Orders</option>
+                        <option value="DECLINED">Decline</option>
                     </select>
+                ` : u.pay_later_status === 'declined' ? `
+                    <span class="badge b-red">Declined</span>
                 ` : '<div style="font-size:0.8rem;color:#94a3b8">—</div>'}
             </td>
             <td style="font-size:0.8rem">${new Date(u.created_at).toLocaleDateString()}</td>
@@ -647,9 +684,18 @@ async function loadUsers() {
     `).join('');
 }
 
-async function handlePayLater(sel, userId) {
-    const d = await api('handle_pay_later_approval', { user_id: userId, status: sel.value });
+async function assignPayLater(sel, userId) {
+    if(!sel.value) return;
+    const d = await api('assign_pay_later', { user_id: userId, plan: sel.value });
     toast(d.success?'success':'error', 'Pay Later', d.message);
+    if(d.success) setTimeout(loadUsers, 500);
+}
+
+async function revokePayLater(userId) {
+    if(!confirm("Are you sure you want to revoke Pay Later access for this user?")) return;
+    const d = await api('revoke_pay_later', { user_id: userId });
+    toast(d.success?'success':'error', 'Pay Later', d.message);
+    if(d.success) setTimeout(loadUsers, 500);
 }
 
 async function viewUserOrders(userId, name) {
@@ -1170,6 +1216,41 @@ async function deleteProduct(id, name) {
     if (d.success) { toast('success','Deleted',`"${name}" removed.`); loadProducts(); }
     else toast('error','Error',d.message);
 }
+
+// ── Invoices ─────────────────────────────
+async function loadAdminInvoices() {
+    const el = document.getElementById('adminInvoicesList');
+    const d = await fetch('../api/invoice.php',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action:'get_invoices'})}).then(r=>r.json()).catch(()=>({}));
+    if(!d.success || !d.invoices?.length) { el.innerHTML='<div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>No invoices found.</div>'; return; }
+    el.innerHTML = d.invoices.map(i => `
+        <div style="padding:15px;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;background:#f8fafc;">
+            <div style="display:flex;justify-content:space-between;font-weight:800;font-size:.9rem;margin-bottom:4px;">
+                <span>${i.invoice_no}</span>
+                <span class="badge ${i.status==='paid'?'b-green':'b-red'}">${i.status.toUpperCase()}</span>
+            </div>
+            <div style="font-weight:600;color:#334155;">${i.user_name} <span style="font-weight:400;color:var(--muted);">(${i.phone})</span></div>
+            <div style="font-size:.85rem;color:var(--muted);margin-top:6px;display:flex;justify-content:space-between;">
+                <span>${i.description}</span>
+                <span style="font-weight:800;color:#0f172a;font-size:1rem;">₹${parseFloat(i.amount).toFixed(2)}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+document.getElementById('invoiceForm')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('btnGenInv');
+    btn.disabled=true; btn.textContent='Generating...';
+    const d = await fetch('../api/invoice.php',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({
+        action:'create_invoice',
+        user_id: document.getElementById('invUser').value,
+        amount: document.getElementById('invAmount').value,
+        description: document.getElementById('invDesc').value
+    })}).then(r=>r.json()).catch(()=>({success:false,message:'Error'}));
+    toast(d.success?'success':'error', 'Invoice', d.message);
+    btn.disabled=false; btn.textContent='Send Invoice';
+    if(d.success) { e.target.reset(); loadAdminInvoices(); }
+});
 
 // ── Logout ──
 document.getElementById('logoutBtn').addEventListener('click', async () => {

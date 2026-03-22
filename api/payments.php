@@ -87,6 +87,64 @@ if ($action === 'create_rzp_order') {
     }
 }
 
+// --- CREATE BULK RAZORPAY ORDER ---
+if ($action === 'create_bulk_rzp_order') {
+    $stmt = $pdo->prepare("
+        SELECT p.order_id, p.amount 
+        FROM payments p 
+        JOIN orders o ON p.order_id = o.id 
+        WHERE p.user_id = ? AND p.status = 'remaining' AND p.payment_mode LIKE 'PAY_LATER%' AND o.status != 'cancelled'
+    ");
+    $stmt->execute([$userId]);
+    $pendingPayments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($pendingPayments)) {
+        respond(false, 'No pending Pay Later dues found to settle.');
+    }
+
+    $totalAmount = 0;
+    foreach ($pendingPayments as $p) {
+        $totalAmount += (float)$p['amount'];
+    }
+
+    $amountInPaise = round($totalAmount * 100);
+
+    $api_url = "https://api.razorpay.com/v1/orders";
+    $auth = base64_encode("$razorpayKeyId:$razorpayKeySecret");
+    $payload = [
+        "amount" => $amountInPaise,
+        "currency" => "INR",
+        "receipt" => "rcpt_bulk_" . $userId . "_" . time(),
+        "notes" => ["digiwash_bulk_pay" => "true"]
+    ];
+
+    $ch = curl_init($api_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json", "Authorization: Basic $auth"]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $resData = json_decode($response, true);
+
+    if ($httpCode === 200 && isset($resData['id'])) {
+        try {
+            $pdo->beginTransaction();
+            $rzp_id = $resData['id'];
+            foreach ($pendingPayments as $p) {
+                $pdo->prepare("UPDATE payments SET rzp_order_id = ? WHERE order_id = ? AND status = 'remaining'")
+                    ->execute([$rzp_id, $p['order_id']]);
+            }
+            $pdo->commit();
+            respond(true, 'Razorpay bulk order created', ['rzp_order_id' => $rzp_id, 'amount' => $amountInPaise, 'key' => $razorpayKeyId]);
+        } catch (\Exception $e) { $pdo->rollBack(); respond(false, 'DB Error: ' . $e->getMessage()); }
+    } else {
+        respond(false, 'Failed to initiate gateway.');
+    }
+}
+
 // --- VERIFY PAYMENT SIGNATURE ---
 if ($action === 'verify_payment') {
     $rzpPaymentId = $data['razorpay_payment_id'] ?? '';
@@ -106,13 +164,32 @@ if ($action === 'verify_payment') {
         try {
             $pdo->beginTransaction();
 
-            // 1. Update order status
-            $stmt = $pdo->prepare("UPDATE orders SET payment_status = 'completed', updated_at = NOW() WHERE id = ? AND user_id = ?");
-            $stmt->execute([$localOrderId, $userId]);
+            if ($localOrderId === 'BULK') {
+                $stmt = $pdo->prepare("SELECT order_id FROM payments WHERE rzp_order_id = ? AND user_id = ? AND status = 'remaining'");
+                $stmt->execute([$rzpOrderId, $userId]);
+                $orderIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-            // 2. Update payment record
-            $stmt = $pdo->prepare("UPDATE payments SET status = 'completed', rzp_payment_id = ?, updated_at = NOW() WHERE order_id = ?");
-            $stmt->execute([$rzpPaymentId, $localOrderId]);
+                if (!empty($orderIds)) {
+                    $in = str_repeat('?,', count($orderIds) - 1) . '?';
+                    $orderParams = array_merge($orderIds, [$userId]);
+                    
+                    // Update orders matching the returned order IDs
+                    $stmtOrder = $pdo->prepare("UPDATE orders SET payment_status = 'completed', updated_at = NOW() WHERE id IN ($in) AND user_id = ?");
+                    $stmtOrder->execute($orderParams);
+
+                    // Update payments universally matching the RZP order ID
+                    $stmtPayment = $pdo->prepare("UPDATE payments SET status = 'completed', rzp_payment_id = ?, updated_at = NOW() WHERE rzp_order_id = ?");
+                    $stmtPayment->execute([$rzpPaymentId, $rzpOrderId]);
+                }
+            } else {
+                // 1. Update single order status
+                $stmt = $pdo->prepare("UPDATE orders SET payment_status = 'completed', updated_at = NOW() WHERE id = ? AND user_id = ?");
+                $stmt->execute([$localOrderId, $userId]);
+
+                // 2. Update single payment record
+                $stmt = $pdo->prepare("UPDATE payments SET status = 'completed', rzp_payment_id = ?, updated_at = NOW() WHERE order_id = ?");
+                $stmt->execute([$rzpPaymentId, $localOrderId]);
+            }
 
             $pdo->commit();
             respond(true, 'Payment verified and captured successfully!');

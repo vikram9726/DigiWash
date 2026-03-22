@@ -168,25 +168,25 @@ if ($action === 'toggle_block_user') {
     }
 }
 
-if ($action === 'assign_pay_later_plan') {
+if ($action === 'assign_pay_later') {
     $userId = (int)($data['user_id'] ?? 0);
-    $planAction = $data['plan_action'] ?? '';
-    
-    if (in_array($planAction, ['PAY_LATER_4', 'PAY_LATER_8', 'PAY_LATER_12'])) {
-        $stmt = $pdo->prepare("UPDATE users SET pay_later_plan = ?, pay_later_status = 'approved' WHERE id = ?");
-        $stmt->execute([$planAction, $userId]);
-        respond(true, "Successfully approved and assigned $planAction.");
-    } elseif ($planAction === 'DECLINED') {
-        $stmt = $pdo->prepare("UPDATE users SET pay_later_status = 'declined' WHERE id = ?");
-        $stmt->execute([$userId]);
-        respond(true, "Pay Later request declined.");
-    } elseif ($planAction === 'NONE') {
-        $stmt = $pdo->prepare("UPDATE users SET pay_later_plan = 'NONE', pay_later_status = 'locked' WHERE id = ?");
-        $stmt->execute([$userId]);
-        respond(true, "Plan reset and locked.");
+    $plan = $data['plan'] ?? ''; 
+    if ($plan === 'DECLINED') {
+        $pdo->prepare("UPDATE users SET pay_later_status = 'declined' WHERE id = ?")->execute([$userId]);
+        respond(true, "Request declined.");
+    } elseif (in_array($plan, ['PAY_LATER_4', 'PAY_LATER_8', 'PAY_LATER_12'])) {
+        $pdo->prepare("UPDATE users SET pay_later_plan = ?, pay_later_status = 'approved' WHERE id = ?")->execute([$plan, $userId]);
+        respond(true, "Successfully approved for $plan.");
     } else {
-        respond(false, "Invalid action requested.");
+        respond(false, 'Invalid plan.');
     }
+}
+
+if ($action === 'revoke_pay_later') {
+    $userId = (int)($data['user_id'] ?? 0);
+    if (!$userId) respond(false, 'Invalid user.');
+    $pdo->prepare("UPDATE users SET pay_later_plan = 'NONE', pay_later_status = 'locked' WHERE id = ?")->execute([$userId]);
+    respond(true, "Pay Later approval revoked.");
 }
 
 if ($action === 'delete_user') {

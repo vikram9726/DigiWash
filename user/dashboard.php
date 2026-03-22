@@ -327,6 +327,19 @@ $payLaterStatus = $user['pay_later_status'] ?? 'locked';
             </div>
             <?php else: ?>
 
+            <!-- Subscription Section -->
+            <div class="card" style="margin-bottom:1.25rem; border:1px solid #e0e7ff; background:#f8faff;">
+                <div style="font-weight:800;font-size:1rem;margin-bottom:1rem;display:flex;align-items:center;gap:8px;">
+                    <i class="material-icons-outlined" style="color:var(--primary);">autorenew</i> Weekly Subscriptions
+                </div>
+                <div style="font-size:.85rem;color:var(--muted);margin-bottom:1.25rem;">Set a schedule and we'll automatically create a pickup request for you. Normal limits apply.</div>
+                
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <button class="btn btn-outline subs-btn" id="sub-NONE" onclick="saveAutoOrder('NONE')" style="font-size:.8rem;padding:.6rem .25rem;justify-content:center;">No Auto-pickup</button>
+                    <button class="btn btn-outline subs-btn" id="sub-MONDAYS" onclick="saveAutoOrder('MONDAYS')" style="font-size:.8rem;padding:.6rem .25rem;justify-content:center;">Every Monday</button>
+                </div>
+            </div>
+
             <!-- Product grid -->
             <div class="card" style="margin-bottom:1.25rem;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
@@ -366,14 +379,14 @@ $payLaterStatus = $user['pay_later_status'] ?? 'locked';
                         <select id="paymentMode" class="form-control" style="flex:1;">
                             <option value="ONLINE">Pay Now (Online)</option>
                             <option value="COD">Cash on Delivery</option>
-                            <option value="<?= $payLaterPlan !== 'NONE' ? $payLaterPlan : 'PAY_LATER' ?>" <?= $payLaterStatus !== 'approved' ? 'disabled' : '' ?>>
-                                Pay Later <?= $payLaterPlan !== 'NONE' ? '('.str_replace('PAY_LATER_','', $payLaterPlan).' Orders)' : '' ?>
-                            </option>
+                            <?php if($payLaterStatus === 'approved' && $payLaterPlan !== 'NONE'): ?>
+                                <option value="<?= $payLaterPlan ?>">Pay Later (<?= str_replace('PAY_LATER_','', $payLaterPlan) ?> Orders)</option>
+                            <?php endif; ?>
                         </select>
                         <?php if($payLaterStatus === 'locked' || $payLaterStatus === 'declined' || $payLaterPlan === 'NONE'): ?>
                             <button type="button" class="btn btn-outline btn-sm" onclick="requestPayLater()" style="white-space:nowrap; padding:.6rem 1rem;"><i class="material-icons-outlined" style="font-size:1rem;vertical-align:middle;">security_update_good</i> Request Pay Later</button>
                         <?php elseif($payLaterStatus === 'pending_approval'): ?>
-                            <button type="button" class="btn btn-ghost btn-sm" disabled style="white-space:nowrap; padding:.6rem 1rem;">Pending Approval...</button>
+                            <button type="button" class="btn btn-ghost btn-sm" disabled style="white-space:nowrap; padding:.6rem 1rem;">Pending Admin Approval</button>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -498,6 +511,23 @@ $payLaterStatus = $user['pay_later_status'] ?? 'locked';
     </div>
 </div>
 
+<!-- ── Payment Limit Modal ── -->
+<div class="modal-overlay" id="limitModal">
+    <div class="modal-box" style="text-align:center; padding: 2.5rem 2rem; max-width:400px;">
+        <i class="material-icons-outlined" style="font-size:3.5rem; color:var(--danger); margin-bottom:1rem;">credit_score</i>
+        <div class="modal-title" style="font-size:1.3rem;">Service Paused</div>
+        <div class="modal-sub" style="font-size:.9rem; margin-top:.5rem;">You have reached your ordering limit. Please clear your outstanding dues to resume booking laundry services.</div>
+        
+        <div style="background:#fef2f2; border:1.5px solid #fecaca; border-radius:12px; padding:1.25rem; margin:1.5rem 0;">
+            <div style="font-size:.8rem; font-weight:700; color:#991b1b; text-transform:uppercase;">Outstanding Dues</div>
+            <div style="font-size:2rem; font-weight:900; color:var(--danger); margin-top:4px;" id="limitModalDues">₹0</div>
+        </div>
+
+        <button class="btn btn-primary" style="width:100%; justify-content:center; padding:.85rem; font-size:1rem;" onclick="closeModal('limitModal'); switchTab('payments', document.getElementById('nav-payments'))">Pay Now to Continue</button>
+        <button class="btn btn-ghost" style="width:100%; justify-content:center; margin-top:10px;" onclick="closeModal('limitModal')">Dismiss</button>
+    </div>
+</div>
+
 <script>
 const csrfToken = "<?= $csrfToken ?>";
 const userPayLaterPlan = "<?= $payLaterPlan ?>";
@@ -505,6 +535,9 @@ const userPayLaterStatus = "<?= $payLaterStatus ?>";
 let cart = {};
 let appliedDiscount = 0;
 let currentOrderTab = 'ongoing';
+let unpaidPayLaterCount = 0;
+let unpaidCodCount = 0;
+let lastOrderData = null;
 
 // ── Toast ──────────────────────────────────────────────────────
 function toast(type, title, msg = '', dur = 4000) {
@@ -558,6 +591,20 @@ async function fetchStats() {
     document.getElementById('sActive').textContent    = d.active_orders;
     document.getElementById('sCompleted').textContent = d.completed_orders;
     document.getElementById('sDues').textContent      = '₹' + parseFloat(d.pending_payment||0).toFixed(0);
+    unpaidPayLaterCount = parseInt(d.unpaid_pay_later || 0);
+    unpaidCodCount = parseInt(d.unpaid_cod || 0);
+    lastOrderData = d.recent_order || null;
+    
+    // Highlight active subscription tab
+    document.querySelectorAll('.subs-btn').forEach(b => {
+        b.classList.remove('btn-primary');
+        b.classList.add('btn-outline');
+    });
+    const activeSub = document.getElementById('sub-' + (d.auto_order_freq || 'NONE'));
+    if(activeSub) {
+        activeSub.classList.remove('btn-outline');
+        activeSub.classList.add('btn-primary');
+    }
 }
 
 // ── Activity ─────────────────────────────────────────────────
@@ -698,6 +745,25 @@ document.getElementById('applyCouponBtn')?.addEventListener('click', async () =>
 
 // ── Submit Order ──────────────────────────────────────────────
 document.getElementById('submitOrderBtn')?.addEventListener('click', async () => {
+    const pMode = document.getElementById('paymentMode').value;
+    
+    if (pMode.startsWith('PAY_LATER')) {
+        const limit = parseInt(userPayLaterPlan.replace('PAY_LATER_', '')) || 4;
+        if (unpaidPayLaterCount >= limit) {
+            document.querySelector('#limitModal .modal-sub').textContent = `You have reached your limit of ${limit} unpaid Pay Later orders. Clear dues to use Pay Later, or select Online/COD.`;
+            document.getElementById('limitModalDues').textContent = document.getElementById('sDues').textContent;
+            openModal('limitModal');
+            return;
+        }
+    } else if (pMode === 'COD') {
+        if (unpaidCodCount >= 4) {
+            document.querySelector('#limitModal .modal-sub').textContent = `You have 4 unpaid Cash on Delivery orders. Clear dues to use COD, or select Online Payment.`;
+            document.getElementById('limitModalDues').textContent = document.getElementById('sDues').textContent;
+            openModal('limitModal');
+            return;
+        }
+    }
+
     const items = Object.values(cart);
     if (!items.length) { toast('error','Empty Cart','Select at least one service.'); return; }
     const btn = document.getElementById('submitOrderBtn');
@@ -768,17 +834,34 @@ async function loadOrders(type, tabEl) {
             <div class="order-row">
                 <div class="order-row-top">
                     <div>
-                        <div class="order-id">Order #${o.id}</div>
+                        <div class="order-id">Order #${o.id} <span style="font-size:0.7rem;color:var(--muted);font-weight:600;background:#f1f5f9;padding:2px 6px;border-radius:4px;margin-left:5px;">💳 ${o.payment_mode ? o.payment_mode.replace(/_/g,' ') : 'Unknown'}</span></div>
                         <div class="order-meta">₹${o.total_amount} · ${new Date(o.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
                     </div>
                     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                         ${statusBadge(o.status)}
                         ${o.status === 'delivered' ? `<button class="btn btn-sm btn-danger" onclick="openReturnModal(${o.id})">↩ Return</button>` : ''}
+                        ${o.status === 'pending' ? `<button class="btn btn-sm btn-outline" style="border-color:var(--danger);color:var(--danger);" onclick="cancelOrder(${o.id})">✕ Cancel</button>` : ''}
                     </div>
                 </div>
                 ${timeline}
+                ${o.items && o.items.length ? `
+                    <div style="background:#f8fafc;padding:0.7rem 0.85rem;border-radius:8px;margin-top:0.75rem;font-size:0.8rem;color:#475569;border:1px solid var(--border);">
+                        <strong>Items:</strong> ${o.items.map(it => `${it.product_name} (${it.size_label}) × ${it.quantity}`).join(', ')}
+                    </div>
+                ` : ''}
             </div>`;
     }).join('');
+}
+
+async function cancelOrder(orderId) {
+    if(!confirm("Are you sure you want to cancel this order?")) return;
+    const d = await apiCall('../api/orders.php', 'cancel_order', { order_id: orderId });
+    toast(d.success?'success':'error', 'Order Cancellation', d.message);
+    if(d.success) {
+        fetchStats();
+        loadActivity();
+        loadOrders(currentOrderTab);
+    }
 }
 
 // ── Payments ─────────────────────────────────────────────────
@@ -789,26 +872,151 @@ async function loadPayments(type, tabEl) {
     }
     const el = document.getElementById('paymentsList');
     el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:2rem;">Loading…</p>';
-    const d = await apiCall('../api/orders.php','get_payments',{ type });
-    if (!d.success || !d.payments?.length) {
+    
+    // Concurrently fetch standard checkout orders and admin generated custom invoices
+    const [d, invRes] = await Promise.all([
+        apiCall('../api/orders.php','get_payments',{ type }),
+        apiCall('../api/invoice.php','get_invoices',{})
+    ]);
+
+    const myPayments = (d.success && d.payments) ? d.payments : [];
+    const myInvoices = (invRes.success && invRes.invoices) ? invRes.invoices.filter(i => (type==='remaining'?i.status==='unpaid':i.status==='paid')) : [];
+
+    if (myPayments.length === 0 && myInvoices.length === 0) {
         el.innerHTML = `<div class="card" style="text-align:center;padding:3rem;"><i class="material-icons-outlined" style="font-size:3rem;color:#cbd5e1;">check_circle</i><p style="margin-top:1rem;color:var(--muted);">No ${type === 'remaining' ? 'pending dues' : 'payment records'} found.</p></div>`;
         return;
     }
-    el.innerHTML = d.payments.map(p => `
-        <div class="due-card">
-            <div>
-                <div class="due-info">Order #${p.order_id} · ${p.payment_mode}</div>
-                <div style="font-size:.78rem;color:var(--muted);">${new Date(p.created_at).toLocaleDateString('en-IN')}</div>
+
+    let html = '';
+
+    // 1. Custom Invoices Top Block
+    if (myInvoices.length > 0) {
+        html += `<div style="font-weight:800;font-size:0.9rem;margin-bottom:10px;text-transform:uppercase;color:var(--muted);letter-spacing:1px;margin-top:5px;">Custom Invoices</div>`;
+        html += myInvoices.map(i => `
+            <div class="due-card" style="border-left:4px solid #f59e0b;">
+                <div>
+                    <div class="due-info">${i.invoice_no}</div>
+                    <div style="font-size:.78rem;color:var(--muted);">${i.description} · ${new Date(i.created_at).toLocaleDateString('en-IN')}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:1rem;">
+                    <div class="due-amount" style="color:#b45309;">₹${parseFloat(i.amount).toFixed(2)}</div>
+                    ${type === 'remaining' ? `<button class="btn btn-sm btn-primary" style="background:#f59e0b;border-color:#f59e0b;" onclick="payInvoice(${i.id})">Pay</button>` : `<span class="badge b-green">Paid</span>`}
+                </div>
             </div>
-            <div style="display:flex;align-items:center;gap:1rem;">
-                <div class="due-amount">₹${parseFloat(p.amount).toFixed(2)}</div>
-                ${type === 'remaining' ? `<button class="btn btn-sm btn-primary" onclick="initiatePayment(${p.order_id},${p.amount})">Pay Now</button>` : `<span class="badge b-green">Paid</span>`}
+        `).join('');
+    }
+
+    // 2. Main Order Balances
+    if (type === 'remaining' && myPayments.length > 0) {
+        const plPayments = myPayments.filter(p => p.payment_mode.startsWith('PAY_LATER'));
+        if (plPayments.length > 0) {
+            const hasInTransit = plPayments.some(p => p.order_status !== 'delivered' && p.order_status !== 'cancelled');
+            const payLaterTotal = plPayments.reduce((s, p) => s + parseFloat(p.amount), 0);
+            const bulkBtn = hasInTransit
+                ? `<button class="btn" style="background:#e2e8f0; color:#94a3b8; padding:.8rem 1.5rem; font-weight:800; font-size:1rem; cursor:not-allowed;" disabled title="All Pay Later orders must be delivered first">Delivery Pending</button>`
+                : `<button class="btn" style="background:white; color:var(--primary); padding:.8rem 1.5rem; font-weight:800; font-size:1rem;" onclick="initiateBulkPayment()">Pay All Now</button>`;
+                
+            html += `
+            <div style="background:linear-gradient(135deg,var(--primary),var(--primary-d)); border-radius:14px; padding:1.5rem; color:white; margin-bottom:1.5rem; margin-top:1.5rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; box-shadow:0 8px 20px rgba(99,102,241,0.25);">
+                <div>
+                    <div style="font-size:0.85rem; font-weight:700; opacity:0.9; text-transform:uppercase; letter-spacing:1px;">Pay Later Credit Due</div>
+                    <div style="font-size:2.2rem; font-weight:900; margin-top:4px;">₹${payLaterTotal.toFixed(2)}</div>
+                    <div style="font-size:0.8rem; margin-top:2px; opacity:0.8;">${plPayments.length} unpaid Pay Later orders in queue</div>
+                </div>
+                ${bulkBtn}
             </div>
-        </div>
-    `).join('');
+            `;
+        }
+    }
+
+    if (myPayments.length > 0) {
+        html += `<div style="font-weight:800;font-size:0.9rem;margin-bottom:10px;text-transform:uppercase;color:var(--muted);letter-spacing:1px;margin-top:1rem;">Order Dues</div>`;
+        const plPaymentsRef = myPayments.filter(p => p.payment_mode.startsWith('PAY_LATER'));
+        const anyInTransit = plPaymentsRef.some(p => p.order_status !== 'delivered' && p.order_status !== 'cancelled');
+
+        html += myPayments.map(p => {
+            let btnHtml = '';
+            if (type === 'remaining') {
+                if (p.payment_mode.startsWith('PAY_LATER') && anyInTransit) {
+                    btnHtml = `<button class="btn btn-sm" style="background:#e2e8f0;color:#94a3b8;cursor:not-allowed;" disabled>Locked</button>`;
+                } else {
+                    btnHtml = `<button class="btn btn-sm btn-primary" onclick="initiatePayment(${p.order_id},${p.amount})">Pay</button>`;
+                }
+            } else {
+                btnHtml = `<span class="badge b-green">Paid</span>`;
+            }
+            
+            return `
+            <div class="due-card">
+                <div>
+                    <div class="due-info">Order #${p.order_id} · ${p.payment_mode.replace(/_/g,' ')}</div>
+                    <div style="font-size:.78rem;color:var(--muted);">${new Date(p.created_at).toLocaleDateString('en-IN')}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:1rem;">
+                    <div class="due-amount">₹${parseFloat(p.amount).toFixed(2)}</div>
+                    ${btnHtml}
+                </div>
+            </div>
+            `;
+        }).join('');
+    }
+
+    el.innerHTML = html;
 }
 
-// ── Razorpay ─────────────────────────────────────────────────
+async function initiateBulkPayment() {
+    try {
+        const initRes = await apiCall('../api/payments.php','create_bulk_rzp_order',{});
+        if (!initRes.success) { toast('error','Payment Error',initRes.message); return; }
+        const opts = {
+            key: initRes.key,
+            amount: initRes.amount,
+            currency: 'INR',
+            name: 'DigiWash',
+            description: 'Bulk Pay Later Settlement',
+            order_id: initRes.rzp_order_id,
+            handler: async (res) => {
+                const vd = await apiCall('../api/payments.php','verify_payment',{ razorpay_payment_id:res.razorpay_payment_id, razorpay_order_id:res.razorpay_order_id, razorpay_signature:res.razorpay_signature, local_order_id:'BULK' });
+                toast(vd.success?'success':'error', vd.success?'Payment Successful':'Verification Failed', vd.message);
+                if (vd.success) { fetchStats(); loadPayments('remaining'); }
+            },
+            prefill: { name:'<?= $userName ?>', contact:'<?= $userPhone ?>' },
+            theme: { color:'#6366f1' }
+        };
+        new Razorpay(opts).open();
+    } catch(e) { toast('error','Payment Error','Could not initiate payment.'); }
+}
+
+// ── Razorpay: Invoice ──────────────────────────────────────────
+async function payInvoice(invId) {
+    try {
+        const init = await apiCall('../api/invoice.php','initiate_payment',{invoice_id:invId});
+        if(!init.success) { toast('error','Error',init.message); return; }
+        const opts = {
+            key: init.key,
+            amount: init.amount,
+            currency: 'INR',
+            name: 'DigiWash Invoice',
+            description: 'Custom Billing',
+            order_id: init.rzp_order_id,
+            handler: async (res) => {
+                const vd = await apiCall('../api/invoice.php','verify_payment',{ 
+                    invoice_id: invId,
+                    razorpay_payment_id: res.razorpay_payment_id, 
+                    razorpay_order_id: res.razorpay_order_id, 
+                    razorpay_signature: res.razorpay_signature 
+                });
+                toast(vd.success?'success':'error', vd.success?'Invoice Paid!':'Verification Failed', vd.message);
+                if(vd.success) { fetchStats(); loadPayments('remaining'); }
+            },
+            prefill: { name:'<?= $userName ?>', contact:'<?= $userPhone ?>' },
+            theme: { color:'#f59e0b' }
+        };
+        new Razorpay(opts).open();
+    } catch(e) { toast('error','Error','Could not launch gateway.'); }
+}
+
+// ── Razorpay: Order ──────────────────────────────────────────
 async function initiatePayment(orderId, amount) {
     try {
         const initRes = await apiCall('../api/payments.php','create_rzp_order',{ order_id:orderId });
@@ -891,6 +1099,13 @@ async function apiCall(url, action, payload = {}) {
         const r = await fetch(url,{ method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken}, body:JSON.stringify({action,...payload}) });
         const d = await r.json(); return d;
     } catch { return { success:false, message:'Network error.' }; }
+}
+
+// ── Auto Order ────────────────────────────────────────────────
+async function saveAutoOrder(freq) {
+    const d = await apiCall('../api/orders.php', 'save_auto_order', { frequency: freq });
+    toast(d.success?'success':'error', 'Auto Order', d.message);
+    if(d.success) fetchStats();
 }
 
 // ── Pay Later Request ─────────────────────────────────────────

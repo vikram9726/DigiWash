@@ -38,15 +38,46 @@ if ($action === 'get_dashboard_stats') {
     $stmt->execute([$userId]);
     $completedOrders = $stmt->fetchColumn();
 
-    // Pending payment
+    // Pending payment general sum
     $stmt = $pdo->prepare("SELECT SUM(amount) FROM payments WHERE user_id = ? AND status = 'remaining'");
     $stmt->execute([$userId]);
     $pendingPayment = $stmt->fetchColumn() ?: 0.00;
 
+    // Unpaid Pay Later count
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE user_id = ? AND status = 'remaining' AND payment_mode LIKE 'PAY_LATER%'");
+    $stmt->execute([$userId]);
+    $unpaidPayLater = $stmt->fetchColumn() ?: 0;
+
+    // Unpaid COD count
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE user_id = ? AND status = 'remaining' AND payment_mode = 'COD'");
+    $stmt->execute([$userId]);
+    $unpaidCod = $stmt->fetchColumn() ?: 0;
+
+    // Auto Order Frequency
+    $stmt = $pdo->prepare("SELECT auto_order_frequency FROM users WHERE id = ?");
+    $stmt->execute([$userId]);
+    $autoFreq = $stmt->fetchColumn() ?: 'NONE';
+
+    // Recent Order (For Quick Reorder)
+    $recentStmt = $pdo->prepare("SELECT id, total_amount FROM orders WHERE user_id = ? AND status != 'cancelled' ORDER BY created_at DESC LIMIT 1");
+    $recentStmt->execute([$userId]);
+    $recentOrder = $recentStmt->fetch(PDO::FETCH_ASSOC);
+    if ($recentOrder) {
+        $itStmt = $pdo->prepare("SELECT product_price_id, product_name, size_label, price, quantity FROM order_items WHERE order_id = ?");
+        $itStmt->execute([$recentOrder['id']]);
+        $recentOrder['items'] = $itStmt->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $recentOrder = null;
+    }
+
     respond(true, 'Stats fetched', [
-        'active_orders' => $activeOrders,
+        'active_orders'    => $activeOrders,
         'completed_orders' => $completedOrders,
-        'pending_payment' => $pendingPayment
+        'pending_payment'  => $pendingPayment,
+        'unpaid_pay_later' => $unpaidPayLater,
+        'unpaid_cod'       => $unpaidCod,
+        'auto_order_freq'  => $autoFreq,
+        'recent_order'     => $recentOrder
     ]);
 }
 
@@ -55,9 +86,10 @@ if ($action === 'create_order') {
     $instructions  = htmlspecialchars(strip_tags($data['instructions'] ?? ''), ENT_QUOTES, 'UTF-8');
     $cartItems     = $data['items'] ?? [];    // [{product_price_id, quantity}]
     $weight        = (float)($data['weight'] ?? 0); // fallback (legacy)
+    $isQuickPickup = filter_var($data['quick_pickup'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
-    // Must have either cart items or weight
-    if (empty($cartItems) && $weight <= 0) {
+    // Must have either cart items, weight, or be a quick pickup request
+    if (!$isQuickPickup && empty($cartItems) && $weight <= 0) {
         respond(false, 'Please add at least one item or enter a weight.');
     }
 
@@ -72,23 +104,27 @@ if ($action === 'create_order') {
     $paymentMode = in_array(strtoupper($data['payment_mode'] ?? 'COD'), ['COD', 'ONLINE', 'PAY_LATER_4', 'PAY_LATER_8', 'PAY_LATER_12']) ? strtoupper($data['payment_mode']) : 'COD';
 
     // 2. Payment lock logic based on user's authorized mode
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM payments p JOIN orders o ON p.order_id = o.id WHERE p.user_id = ? AND p.status = 'remaining' AND o.status = 'delivered'");
-    $stmt->execute([$userId]);
-    $unpaidCount = $stmt->fetchColumn();
-
     if (strpos($paymentMode, 'PAY_LATER') !== false) {
         if ($user['pay_later_status'] !== 'approved' || $user['pay_later_plan'] !== $paymentMode) {
             respond(false, "You are not approved for the $paymentMode plan. Defaulting to Cash on Delivery. Please request access from profile or select Pay Now/COD.");
         }
         $limit = (int)str_replace('PAY_LATER_', '', $paymentMode);
         
-        if ($unpaidCount >= $limit) {
-            respond(false, "You have reached your limit of $limit unpaid delivered orders. Please clear dues before creating new orders.");
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE user_id = ? AND status = 'remaining' AND payment_mode LIKE 'PAY_LATER%'");
+        $stmt->execute([$userId]);
+        $unpaidLaterCount = $stmt->fetchColumn() ?: 0;
+
+        if ($unpaidLaterCount >= $limit) {
+            respond(false, "You have reached your maximum limit of $limit unpaid Pay Later orders. Please clear your dues before creating new Pay Later orders.");
         }
-    } else {
+    } elseif ($paymentMode === 'COD') {
         // Default limit of 4 on normal COD orders to prevent unlimited free stuff
-        if ($unpaidCount >= 4 && $paymentMode === 'COD') {
-            respond(false, "You have 4 unpaid delivered orders. Please clear dues before creating new Cash on Delivery orders.");
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE user_id = ? AND status = 'remaining' AND payment_mode = 'COD'");
+        $stmt->execute([$userId]);
+        $unpaidCodCount = $stmt->fetchColumn() ?: 0;
+
+        if ($unpaidCodCount >= 4) {
+            respond(false, "You have 4 unpaid Cash on Delivery orders. Please clear your dues before creating new Cash on Delivery orders.");
         }
     }
 
@@ -190,22 +226,63 @@ if ($action === 'get_orders') {
     $type = $data['type'] ?? 'ongoing'; // ongoing or completed
 
     if ($type === 'ongoing') {
-        $stmt = $pdo->prepare("SELECT * FROM orders WHERE user_id = ? AND status != 'delivered' AND status != 'cancelled' ORDER BY created_at DESC");
+        $stmt = $pdo->prepare("SELECT o.*, p.payment_mode FROM orders o LEFT JOIN payments p ON p.order_id = o.id WHERE o.user_id = ? AND o.status != 'delivered' AND o.status != 'cancelled' ORDER BY o.created_at DESC");
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM orders WHERE user_id = ? AND (status = 'delivered' OR status = 'cancelled') ORDER BY created_at DESC");
+        $stmt = $pdo->prepare("SELECT o.*, p.payment_mode FROM orders o LEFT JOIN payments p ON p.order_id = o.id WHERE o.user_id = ? AND (o.status = 'delivered' OR o.status = 'cancelled') ORDER BY o.created_at DESC");
     }
     
     $stmt->execute([$userId]);
-    $orders = $stmt->fetchAll();
+    $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($orders as &$order) {
+        $itStmt = $pdo->prepare("SELECT product_name, size_label, quantity FROM order_items WHERE order_id = ?");
+        $itStmt->execute([$order['id']]);
+        $order['items'] = $itStmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 
     respond(true, 'Orders fetched', ['orders' => $orders]);
+}
+
+// --- CANCEL ORDER ---
+if ($action === 'cancel_order') {
+    $orderId = (int)($data['order_id'] ?? 0);
+    if (!$orderId) respond(false, 'Invalid order ID.');
+
+    $stmt = $pdo->prepare("SELECT status FROM orders WHERE id = ? AND user_id = ?");
+    $stmt->execute([$orderId, $userId]);
+    $order = $stmt->fetch();
+
+    if (!$order) {
+        respond(false, 'Order not found.');
+    }
+    if ($order['status'] !== 'pending') {
+        respond(false, 'Cannot cancel because your order has already been processed or picked up.');
+    }
+
+    try {
+        $pdo->beginTransaction();
+        
+        $pdo->prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?")->execute([$orderId]);
+        
+        // Remove active payment dues to prevent blocking new orders
+        $pdo->prepare("DELETE FROM payments WHERE order_id = ? AND status = 'remaining'")->execute([$orderId]);
+        
+        // Release coupon usage
+        $pdo->prepare("DELETE FROM coupon_usages WHERE order_id = ?")->execute([$orderId]);
+
+        $pdo->commit();
+        respond(true, 'Your order has been successfully cancelled.');
+    } catch (\Exception $e) {
+        $pdo->rollBack();
+        respond(false, 'Database Error: ' . $e->getMessage());
+    }
 }
 
 // --- FETCH PAYMENTS ---
 if ($action === 'get_payments') {
     $type = $data['type'] ?? 'remaining'; // 'remaining' or 'completed'
 
-    $stmt = $pdo->prepare("SELECT p.*, o.total_amount FROM payments p JOIN orders o ON p.order_id = o.id WHERE p.user_id = ? AND p.status = ? ORDER BY p.created_at DESC");
+    $stmt = $pdo->prepare("SELECT p.*, o.total_amount, o.status AS order_status FROM payments p JOIN orders o ON p.order_id = o.id WHERE p.user_id = ? AND p.status = ? ORDER BY p.created_at DESC");
     $stmt->execute([$userId, $type]);
     $payments = $stmt->fetchAll();
 
@@ -324,6 +401,41 @@ if ($action === 'request_return') {
     }
 }
 
+// --- GET QR CONFIG ---
+if ($action === 'get_qr_config') {
+    $stmt = $pdo->prepare("SELECT qr_code_hash FROM users WHERE id = ?");
+    $stmt->execute([$userId]);
+    $hash = $stmt->fetchColumn();
+    
+    if (!$hash) {
+        $hash = bin2hex(random_bytes(32));
+        $pdo->prepare("UPDATE users SET qr_code_hash = ? WHERE id = ?")->execute([$hash, $userId]);
+    }
+    
+    respond(true, 'QR config retrieved', ['qr_code_hash' => $hash]);
+}
+
+// --- SAVE AUTO ORDER SCHEDULE ---
+if ($action === 'save_auto_order') {
+    $freq = $data['frequency'] ?? 'NONE';
+    if (!in_array($freq, ['NONE', 'MONDAYS'])) {
+        respond(false, 'Invalid schedule frequency.');
+    }
+    
+    $nextDate = null;
+    if ($freq === 'MONDAYS') {
+        $nextDate = date('Y-m-d', strtotime('next monday'));
+    }
+
+    try {
+        $stmt = $pdo->prepare("UPDATE users SET auto_order_frequency = ?, auto_order_next_date = ? WHERE id = ?");
+        $stmt->execute([$freq, $nextDate, $userId]);
+        respond(true, "Auto-pickup schedule updated to: " . str_replace('_', ' ', $freq));
+    } catch (\Exception $e) {
+        respond(false, 'Failed to update schedule: ' . $e->getMessage());
+    }
+}
+
 // --- REQUEST PAY LATER PLAN ---
 if ($action === 'request_pay_later_plan') {
     $stmt = $pdo->prepare("SELECT pay_later_status FROM users WHERE id = ?");
@@ -337,7 +449,7 @@ if ($action === 'request_pay_later_plan') {
     $stmt = $pdo->prepare("UPDATE users SET pay_later_status = 'pending_approval' WHERE id = ?");
     $stmt->execute([$userId]);
     
-    respond(true, 'Pay Later request submitted to admin for approval!');
+    respond(true, 'Pay Later plan request submitted to admin for approval!');
 }
 
 respond(false, 'Invalid action specified in api/orders.php');
