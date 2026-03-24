@@ -39,15 +39,15 @@ if ($action === 'get_assignments') {
     if ($type === 'pickups') {
         // Pending: assigned but not yet picked up
         $stmt = $pdo->prepare("
-            SELECT o.*, u.name as customer_name, u.shop_address, u.phone 
+            SELECT o.*, u.name as customer_name, u.shop_address, u.phone, u.lat, u.lng 
             FROM orders o JOIN users u ON o.user_id = u.id 
-            WHERE o.delivery_id = ? AND o.status = 'pending'
+            WHERE o.delivery_id = ? AND o.status IN ('assigned', 'pending')
             ORDER BY o.created_at ASC
         ");
     } elseif ($type === 'in_process') {
         // In laundry facility after pickup
         $stmt = $pdo->prepare("
-            SELECT o.*, u.name as customer_name, u.shop_address, u.phone 
+            SELECT o.*, u.name as customer_name, u.shop_address, u.phone, u.lat, u.lng 
             FROM orders o JOIN users u ON o.user_id = u.id 
             WHERE o.delivery_id = ? AND o.status IN ('picked_up','in_process')
             ORDER BY o.updated_at ASC
@@ -55,14 +55,14 @@ if ($action === 'get_assignments') {
     } elseif ($type === 'deliveries') {
         // Ready to return to customer
         $stmt = $pdo->prepare("
-            SELECT o.*, u.name as customer_name, u.shop_address, u.phone 
+            SELECT o.*, u.name as customer_name, u.shop_address, u.phone, u.lat, u.lng 
             FROM orders o JOIN users u ON o.user_id = u.id 
             WHERE o.delivery_id = ? AND o.status = 'out_for_delivery'
             ORDER BY o.updated_at ASC
         ");
     } elseif ($type === 'completed') {
         $stmt = $pdo->prepare("
-            SELECT o.*, u.name as customer_name, u.phone as customer_phone, u.shop_address 
+            SELECT o.*, u.name as customer_name, u.phone as customer_phone, u.shop_address, u.lat, u.lng 
             FROM orders o JOIN users u ON o.user_id = u.id 
             WHERE o.delivery_id = ? AND o.status = 'delivered'
             ORDER BY o.updated_at DESC LIMIT 50
@@ -71,7 +71,7 @@ if ($action === 'get_assignments') {
         // Approved returns — partner must pick up from customer
         $stmt = $pdo->prepare("
             SELECT r.id as return_id, r.reason, r.photo_url, r.created_at as return_date,
-                   o.id, o.total_amount, u.name as customer_name, u.phone, u.shop_address
+                   o.id, o.total_amount, u.name as customer_name, u.phone, u.shop_address, u.lat, u.lng
             FROM returns r
             JOIN orders o ON r.order_id = o.id
             JOIN users u ON r.user_id = u.id
@@ -90,7 +90,7 @@ if ($action === 'get_assignments') {
 // --- DELIVERY STATS ---
 if ($action === 'get_stats') {
     $today = date('Y-m-d');
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE delivery_id = ? AND status = 'pending'");
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE delivery_id = ? AND status IN ('assigned', 'pending')");
     $stmt->execute([$deliveryId]); $pickups = $stmt->fetchColumn();
 
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE delivery_id = ? AND status IN ('picked_up','in_process')");
@@ -112,6 +112,25 @@ if ($action === 'get_stats') {
         'today_done'      => $todayDone,
         'total_done'      => $totalDone,
     ]);
+}
+
+// --- TOGGLE ONLINE ---
+if ($action === 'toggle_online') {
+    $isOnline = filter_var($data['is_online'] ?? false, FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
+    $pdo->prepare("UPDATE users SET is_online = ? WHERE id = ?")->execute([$isOnline, $deliveryId]);
+    respond(true, 'Status updated', ['is_online' => $isOnline]);
+}
+
+// --- ACCEPT ORDER ---
+if ($action === 'accept_order') {
+    $orderId = (int)($data['order_id'] ?? 0);
+    $stmt = $pdo->prepare("UPDATE orders SET status = 'pending' WHERE id = ? AND delivery_id = ? AND status = 'assigned'");
+    $stmt->execute([$orderId, $deliveryId]);
+    if ($stmt->rowCount() > 0) {
+        respond(true, 'Order accepted.');
+    } else {
+        respond(false, 'Order not found or already accepted.');
+    }
 }
 
 // --- FULFILL PICKUP ---
@@ -160,7 +179,10 @@ if ($action === 'mark_ready') {
             $stmtUser = $pdo->prepare("SELECT user_id FROM orders WHERE id = ?");
             $stmtUser->execute([$orderId]);
             $ownerId = $stmtUser->fetchColumn();
-            sendPushNotification($pdo, $ownerId, "Order Ready for Delivery", "Your laundry is cleaned and packed! Out for delivery soon.");
+            $title = "Out for Delivery 🚚";
+            $msg = "Your laundry order #$orderId is cleaned, packed, and out for delivery!";
+            $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)")->execute([$ownerId, $title, $msg]);
+            sendPushNotification($pdo, $ownerId, $title, $msg);
             respond(true, 'Order marked as out for delivery.');
         } else {
             respond(false, 'Could not update. Order may not be yours or not in the right stage.');
@@ -201,6 +223,9 @@ if ($action === 'complete_delivery_otp') {
         $stmt = $pdo->prepare("UPDATE orders SET status = 'delivered', delivered_at = NOW(), updated_at = NOW() WHERE id = ?");
         $stmt->execute([$orderId]);
         
+        // Decrement active orders load
+        $pdo->prepare("UPDATE users SET current_orders = GREATEST(0, current_orders - 1) WHERE id = ?")->execute([$deliveryId]);
+
         $ownerId = $order['user_id'];
         
         // Notification
@@ -251,6 +276,9 @@ if ($action === 'complete_delivery_qr') {
         // Mark order as delivered
         $pdo->prepare("UPDATE orders SET status = 'delivered', delivered_at = NOW(), updated_at = NOW() WHERE id = ?")
             ->execute([$orderId]);
+
+        // Decrement active orders load
+        $pdo->prepare("UPDATE users SET current_orders = GREATEST(0, current_orders - 1) WHERE id = ?")->execute([$deliveryId]);
 
         // Automatically update the related payment to completed
         $pdo->prepare("UPDATE payments SET status = 'completed', updated_at = NOW() WHERE order_id = ?")
@@ -320,6 +348,9 @@ if ($action === 'complete_delivery_bypass') {
             // Mark as delivered, store bypass photo URL
             $stmt = $pdo->prepare("UPDATE orders SET status = 'delivered', delivered_at = NOW(), bypass_photo_url = ?, updated_at = NOW() WHERE id = ? AND delivery_id = ?");
             $stmt->execute([$publicPhotoUrl, $orderId, $deliveryId]);
+
+            // Decrement active orders load
+            $pdo->prepare("UPDATE users SET current_orders = GREATEST(0, current_orders - 1) WHERE id = ?")->execute([$deliveryId]);
 
             // Track user ID
             $uStmt = $pdo->prepare("SELECT user_id FROM orders WHERE id = ?");

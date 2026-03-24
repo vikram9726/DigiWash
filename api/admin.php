@@ -220,23 +220,30 @@ if ($action === 'delete_user') {
 if ($action === 'get_all_orders') {
     $filter = $data['filter'] ?? 'all'; // all, pending, active, delivered, cancelled
     $search = '%' . ($data['search'] ?? '') . '%';
+    $marketIdFilter = (int)($data['market_id'] ?? 0);
 
     $where = "WHERE (u.name LIKE ? OR u.phone LIKE ? OR CAST(o.id AS CHAR) LIKE ?)";
     $params = [$search, $search, $search];
 
+    if ($marketIdFilter > 0) {
+        $where .= " AND o.market_id = ?";
+        $params[] = $marketIdFilter;
+    }
+
     if ($filter === 'active') {
         $where .= " AND o.status NOT IN ('delivered','cancelled')";
-    } elseif (in_array($filter, ['pending','delivered','cancelled','in_process','out_for_delivery','picked_up'])) {
+    } elseif (in_array($filter, ['pending','assigned','delivered','cancelled','in_process','out_for_delivery','picked_up'])) {
         $where .= " AND o.status = ?";
         $params[] = $filter;
     }
 
     $stmt = $pdo->prepare("
         SELECT o.*, u.name as customer_name, u.phone as customer_phone, 
-               d.name as delivery_name
+               d.name as delivery_name, m.name as market_name
         FROM orders o 
         JOIN users u ON o.user_id = u.id 
         LEFT JOIN users d ON o.delivery_id = d.id 
+        LEFT JOIN markets m ON o.market_id = m.id
         $where
         ORDER BY o.created_at DESC LIMIT 150
     ");
@@ -246,7 +253,10 @@ if ($action === 'get_all_orders') {
     $stmt2 = $pdo->query("SELECT id, name FROM users WHERE role = 'delivery' ORDER BY name");
     $partners = $stmt2->fetchAll();
 
-    respond(true, 'Orders fetched', ['orders' => $orders, 'delivery_partners' => $partners]);
+    $stmt3 = $pdo->query("SELECT id, name FROM markets ORDER BY name ASC");
+    $markets = $stmt3->fetchAll();
+
+    respond(true, 'Orders fetched', ['orders' => $orders, 'delivery_partners' => $partners, 'markets' => $markets]);
 }
 
 if ($action === 'assign_order') {
@@ -258,8 +268,17 @@ if ($action === 'assign_order') {
         $stmtUser = $pdo->prepare("SELECT user_id FROM orders WHERE id = ?");
         $stmtUser->execute([$orderId]);
         $ownerId = $stmtUser->fetchColumn();
-        sendPushNotification($pdo, $ownerId, "Driver Assigned", "A delivery partner has been assigned to your order!");
-        sendPushNotification($pdo, $deliveryId, "New Task Assigned", "A new delivery task #$orderId is assigned to you.");
+        
+        $title1 = "Driver Assigned";
+        $msg1 = "A delivery partner has been assigned to your order!";
+        $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)")->execute([$ownerId, $title1, $msg1]);
+        sendPushNotification($pdo, $ownerId, $title1, $msg1);
+        
+        $title2 = "New Task Assigned";
+        $msg2 = "A new delivery task #$orderId is assigned to you.";
+        $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)")->execute([$deliveryId, $title2, $msg2]);
+        sendPushNotification($pdo, $deliveryId, $title2, $msg2);
+        
         respond(true, 'Order assigned to delivery partner successfully.');
     } catch (\Exception $e) {
         respond(false, 'Database Error: ' . $e->getMessage());
@@ -273,6 +292,26 @@ if ($action === 'update_order_status') {
     if (!$orderId || !in_array($newStatus, $allowed)) respond(false, 'Invalid order or status.');
     try {
         $pdo->prepare("UPDATE orders SET status = ?, updated_at = NOW() WHERE id = ?")->execute([$newStatus, $orderId]);
+        
+        $stmtUser = $pdo->prepare("SELECT user_id FROM orders WHERE id = ?");
+        $stmtUser->execute([$orderId]);
+        $ownerId = $stmtUser->fetchColumn();
+        
+        $statusLabels = [
+            'pending' => 'Pending',
+            'picked_up' => 'Picked Up',
+            'in_process' => 'In Process',
+            'out_for_delivery' => 'Out for Delivery',
+            'delivered' => 'Delivered',
+            'cancelled' => 'Cancelled'
+        ];
+        $displayStatus = $statusLabels[$newStatus] ?? $newStatus;
+        
+        $title = "Order Update";
+        $msg = "Your order #$orderId is now $displayStatus.";
+        $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)")->execute([$ownerId, $title, $msg]);
+        sendPushNotification($pdo, $ownerId, $title, $msg);
+        
         respond(true, "Order #$orderId status updated to $newStatus.");
     } catch (\Exception $e) {
         respond(false, 'DB Error: ' . $e->getMessage());
@@ -326,27 +365,63 @@ if ($action === 'handle_return') {
 }
 
 // ─────────────────────────────────────────────
+// MARKET MANAGEMENT
+// ─────────────────────────────────────────────
+if ($action === 'get_markets') {
+    $stmt = $pdo->query("SELECT * FROM markets ORDER BY name ASC");
+    respond(true, 'Markets fetched', ['markets' => $stmt->fetchAll()]);
+}
+
+if ($action === 'create_market') {
+    $name = trim($data['name'] ?? '');
+    if (!$name) respond(false, 'Market name is required.');
+    $pdo->prepare("INSERT INTO markets (name) VALUES (?)")->execute([$name]);
+    respond(true, 'Market created successfully.');
+}
+
+if ($action === 'update_market') {
+    $id = (int)($data['market_id'] ?? 0);
+    $name = trim($data['name'] ?? '');
+    if (!$id || !$name) respond(false, 'Market ID and Name are required.');
+    $pdo->prepare("UPDATE markets SET name = ? WHERE id = ?")->execute([$name, $id]);
+    respond(true, 'Market updated successfully.');
+}
+
+if ($action === 'delete_market') {
+    $id = (int)($data['market_id'] ?? 0);
+    if (!$id) respond(false, 'Invalid market ID.');
+    // Set market_id = NULL before deleting
+    $pdo->prepare("UPDATE users SET market_id = NULL WHERE market_id = ?")->execute([$id]);
+    $pdo->prepare("UPDATE orders SET market_id = NULL WHERE market_id = ?")->execute([$id]);
+    $pdo->prepare("DELETE FROM markets WHERE id = ?")->execute([$id]);
+    respond(true, 'Market deleted successfully.');
+}
+
+// ─────────────────────────────────────────────
 // DELIVERY PARTNERS
 // ─────────────────────────────────────────────
 if ($action === 'get_partners') {
     $stmt = $pdo->query("
-        SELECT u.id, u.name, u.phone, u.dummy_otp, u.created_at,
+        SELECT u.id, u.name, u.phone, u.dummy_otp, u.created_at, u.market_id, m.name as market_name, u.is_online, u.current_orders,
                COUNT(o.id) as total_assignments,
                SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) as completed,
                SUM(CASE WHEN o.status NOT IN ('delivered','cancelled') THEN 1 ELSE 0 END) as active
         FROM users u
         LEFT JOIN orders o ON o.delivery_id = u.id
+        LEFT JOIN markets m ON u.market_id = m.id
         WHERE u.role = 'delivery'
         GROUP BY u.id
         ORDER BY u.created_at DESC
     ");
-    respond(true, 'Partners fetched', ['partners' => $stmt->fetchAll()]);
+    $markets = $pdo->query("SELECT id, name FROM markets ORDER BY name ASC")->fetchAll();
+    respond(true, 'Partners fetched', ['partners' => $stmt->fetchAll(), 'markets' => $markets]);
 }
 
 if ($action === 'create_delivery_partner') {
     $name  = htmlspecialchars(strip_tags($data['name'] ?? ''), ENT_QUOTES, 'UTF-8');
     $phone = preg_replace('/[^0-9]/', '', $data['phone'] ?? '');
     $otp   = preg_replace('/[^0-9]/', '', $data['otp'] ?? '');
+    $marketId = (int)($data['market_id'] ?? 0) ?: null;
 
     if (empty($name))             respond(false, 'Name is required.');
     if (strlen($phone) !== 10)    respond(false, 'Phone must be exactly 10 digits.');
@@ -354,7 +429,7 @@ if ($action === 'create_delivery_partner') {
     if (empty($otp) || strlen($otp) < 4) respond(false, 'OTP must be at least 4 digits.');
 
     try {
-        $pdo->prepare("INSERT INTO users (name, phone, dummy_otp, role) VALUES (?, ?, ?, 'delivery')")->execute([$name, $phone, $otp]);
+        $pdo->prepare("INSERT INTO users (name, phone, dummy_otp, role, market_id) VALUES (?, ?, ?, 'delivery', ?)")->execute([$name, $phone, $otp, $marketId]);
         respond(true, 'Delivery partner created successfully.');
     } catch (\Exception $e) {
         if (str_contains($e->getMessage(), 'Duplicate'))
@@ -367,15 +442,16 @@ if ($action === 'update_delivery_partner') {
     $partnerId = (int)($data['partner_id'] ?? 0);
     $name      = htmlspecialchars(strip_tags($data['name'] ?? ''), ENT_QUOTES, 'UTF-8');
     $otp       = preg_replace('/[^0-9]/', '', $data['otp'] ?? '');
+    $marketId  = (int)($data['market_id'] ?? 0) ?: null;
 
     if (!$partnerId || empty($name)) respond(false, 'Partner ID and name are required.');
     if (!empty($otp) && strlen($otp) < 4) respond(false, 'OTP must be at least 4 digits.');
 
     try {
         if (!empty($otp)) {
-            $pdo->prepare("UPDATE users SET name = ?, dummy_otp = ? WHERE id = ? AND role = 'delivery'")->execute([$name, $otp, $partnerId]);
+            $pdo->prepare("UPDATE users SET name = ?, dummy_otp = ?, market_id = ? WHERE id = ? AND role = 'delivery'")->execute([$name, $otp, $marketId, $partnerId]);
         } else {
-            $pdo->prepare("UPDATE users SET name = ? WHERE id = ? AND role = 'delivery'")->execute([$name, $partnerId]);
+            $pdo->prepare("UPDATE users SET name = ?, market_id = ? WHERE id = ? AND role = 'delivery'")->execute([$name, $marketId, $partnerId]);
         }
         respond(true, 'Partner updated successfully.');
     } catch (\Exception $e) {
@@ -422,7 +498,17 @@ if ($action === 'send_notification') {
     $title   = htmlspecialchars(strip_tags($data['title'] ?? ''), ENT_QUOTES, 'UTF-8');
     $message = htmlspecialchars(strip_tags($data['message'] ?? ''), ENT_QUOTES, 'UTF-8');
     if (empty($title) || empty($message)) respond(false, 'Title and message are required.');
-    respond(true, 'Push notification queued for all users successfully!');
+    
+    // Get all active users
+    $stmt = $pdo->query("SELECT id FROM users WHERE role = 'customer'");
+    $users = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    foreach ($users as $uId) {
+        $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)")->execute([$uId, $title, $message]);
+        sendPushNotification($pdo, $uId, $title, $message);
+    }
+    
+    respond(true, 'Push notification sent to all users successfully!');
 }
 
 // ─────────────────────────────────────────────

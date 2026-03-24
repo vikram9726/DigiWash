@@ -6,13 +6,15 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'customer') {
 $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
 $stmt->execute([$_SESSION['user_id']]);
 $user = $stmt->fetch();
-$needsProfileSetup = empty($user['name']) || empty($user['shop_address']);
+$needsProfileSetup = empty($user['name']) || empty($user['shop_address']) || empty($user['market_id']);
 $qrCodeHash = $user['qr_code_hash'] ?? '';
 $csrfToken  = $_SESSION['csrf_token'] ?? '';
 $userName   = htmlspecialchars($user['name'] ?? 'User');
 $userPhone  = htmlspecialchars($user['phone'] ?? '');
 $payLaterPlan = $user['pay_later_plan'] ?? 'NONE';
 $payLaterStatus = $user['pay_later_status'] ?? 'locked';
+
+$markets = $pdo->query("SELECT id, name FROM markets ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 // Delivery OTP Generator (30 Min Rolling Window)
 $otpSalt = "digiwash_delivery_otp_sec";
@@ -31,6 +33,9 @@ $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <!-- Firebase SDKs for Push Notifications -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-messaging-compat.js"></script>
     <style>
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
         :root{
@@ -292,7 +297,15 @@ $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
     <main class="main">
 
         <!-- GLOBAL TOP NAV -->
-        <div style="display:flex; justify-content:flex-end; margin-bottom:1.5rem; position:relative; z-index:900;">
+        <div style="display:flex; justify-content:flex-end; gap:1rem; margin-bottom:1.5rem; position:relative; z-index:900;">
+            <!-- Marketplace Button -->
+            <a href="marketplace.php" style="text-decoration:none;">
+                <div style="background:linear-gradient(135deg,var(--primary),var(--primary-d)); padding:0 1rem; height:46px; border-radius:12px; display:flex; gap:8px; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 4px 12px rgba(99,102,241,0.35); color:white;">
+                    <i class="material-icons-outlined" style="font-size:1.2rem;">storefront</i>
+                    <span style="font-weight:700; font-size:.9rem;">Marketplace</span>
+                </div>
+            </a>
+            
             <div class="nav-bell" onclick="document.getElementById('notifDropdown').classList.toggle('open')" style="background:var(--card); width:46px; height:46px; border-radius:12px; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.05); position:relative; border:1px solid var(--border);">
                 <i class="material-icons-outlined" style="font-size:1.5rem; color:var(--text);">notifications</i>
                 <span class="nav-badge" id="notifBadge" style="position:absolute; top:-6px; right:-6px; display:none;">0</span>
@@ -311,7 +324,7 @@ $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
         <?php if($needsProfileSetup): ?>
         <div class="alert-banner">
             <i class="material-icons-outlined">warning_amber</i>
-            <p>Complete your profile (Name + Address) before placing orders.</p>
+            <p>Complete your profile (Name, Address & Market) before placing orders.</p>
             <button onclick="switchTab('profile',document.getElementById('nav-profile'))">Fix Now →</button>
         </div>
         <?php endif; ?>
@@ -496,6 +509,23 @@ $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
                         <div class="form-group">
                             <label>Shop / Pickup Address *</label>
                             <textarea id="p_address" class="form-control" rows="3" required><?= htmlspecialchars($user['shop_address']??'') ?></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Service Market Zone *</label>
+                            <div style="display:flex;gap:10px;">
+                                <select id="p_market" class="form-control" style="flex:1;" required>
+                                    <option value="">Select your area...</option>
+                                    <?php foreach($markets as $m): ?>
+                                        <option value="<?= $m['id'] ?>" <?= ($user['market_id']==$m['id'])?'selected':'' ?>><?= htmlspecialchars($m['name']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <button type="button" class="btn btn-outline" onclick="detectLocation()" style="padding:0 1rem;" title="Auto-detect via GPS">
+                                    <i class="material-icons-outlined" style="font-size:1.1rem;vertical-align:middle;">my_location</i>
+                                </button>
+                            </div>
+                            <div id="locStatus" style="font-size:0.75rem;color:var(--muted);margin-top:5px;"></div>
+                            <input type="hidden" id="p_lat" value="<?= htmlspecialchars($user['lat']??'') ?>">
+                            <input type="hidden" id="p_lng" value="<?= htmlspecialchars($user['lng']??'') ?>">
                         </div>
                         <div class="form-group">
                             <label>Alternate Contact <span style="color:var(--muted);font-weight:500;">(Optional, 10 digits)</span></label>
@@ -1168,7 +1198,42 @@ async function initiatePayment(orderId, amount) {
     } catch(e) { toast('error','Payment Error','Could not initiate payment.'); }
 }
 
-// ── Profile form ──────────────────────────────────────────────
+// ── Profile form & Location ───────────────────────────────────
+function detectLocation() {
+    const locStatus = document.getElementById('locStatus');
+    const latInp = document.getElementById('p_lat');
+    const lngInp = document.getElementById('p_lng');
+    const marketSel = document.getElementById('p_market');
+
+    if (!navigator.geolocation) {
+        locStatus.textContent = "Geolocation is not supported by your browser.";
+        locStatus.style.color = "var(--danger)";
+        return;
+    }
+
+    locStatus.textContent = "Locating… Please allow access.";
+    locStatus.style.color = "var(--primary)";
+
+    navigator.geolocation.getCurrentPosition(async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        latInp.value = lat;
+        lngInp.value = lng;
+        locStatus.textContent = "Location attached successfully! (" + lat.toFixed(4) + ", " + lng.toFixed(4) + ")";
+        locStatus.style.color = "var(--success)";
+
+    }, (err) => {
+        let errStr = err.message;
+        if(err.code === err.PERMISSION_DENIED) errStr = "Permission denied. Please enable location services.";
+        locStatus.textContent = "Failed to get location: " + errStr;
+        locStatus.style.color = "var(--danger)";
+    }, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0
+    });
+}
+
 document.getElementById('profileForm')?.addEventListener('submit', async e => {
     e.preventDefault();
     const btn = document.getElementById('saveProfileBtn');
@@ -1178,7 +1243,10 @@ document.getElementById('profileForm')?.addEventListener('submit', async e => {
         name: document.getElementById('p_name').value,
         email: document.getElementById('p_email').value,
         shop_address: document.getElementById('p_address').value,
-        alt_contact: document.getElementById('p_alt').value
+        alt_contact: document.getElementById('p_alt').value,
+        market_id: document.getElementById('p_market').value,
+        lat: document.getElementById('p_lat').value,
+        lng: document.getElementById('p_lng').value
     });
     msg.textContent = d.message; msg.style.display='block';
     msg.style.color = d.success?'var(--success)':'var(--danger)';
@@ -1243,11 +1311,140 @@ async function requestPayLater() {
     if(d.success) setTimeout(()=>location.reload(), 1500);
 }
 
+// ══════════════════════════════════════════════════════════════
+// ── FIREBASE CLOUD MESSAGING (Push Notifications) ────────────
+// ══════════════════════════════════════════════════════════════
+const firebaseConfig = <?= getFirebaseConfigJs() ?>;
+firebase.initializeApp(firebaseConfig);
+let messaging = null;
+
+async function initFCM() {
+    try {
+        // Check browser support
+        if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+            console.log('FCM: Browser does not support notifications');
+            return;
+        }
+
+        // Register service worker
+        const swReg = await navigator.serviceWorker.register('../firebase-messaging-sw.js');
+        messaging = firebase.messaging();
+
+        // Request permission
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+            console.log('FCM: Notification permission denied');
+            return;
+        }
+
+        // Get FCM token (VAPID key from Firebase Console)
+        const vapidKey = '<?= getenv("FIREBASE_VAPID_KEY") ?: "" ?>';
+        const tokenOptions = { serviceWorkerRegistration: swReg };
+        if (vapidKey) tokenOptions.vapidKey = vapidKey;
+        
+        const fcmToken = await messaging.getToken(tokenOptions);
+        if (fcmToken) {
+            console.log('FCM: Token obtained');
+            // Save to backend
+            await apiCall('../api/user.php', 'save_fcm_token', { fcm_token: fcmToken });
+        }
+
+        // Handle foreground messages
+        messaging.onMessage((payload) => {
+            console.log('FCM: Foreground message', payload);
+            const title = payload.notification?.title || 'DigiWash';
+            const body = payload.notification?.body || '';
+            
+            // Show toast
+            toast('info', title, body, 6000);
+            
+            // Refresh notification bell
+            loadNotifications();
+            
+            // Refresh relevant data
+            fetchStats();
+            loadActivity();
+        });
+
+    } catch(err) {
+        console.error('FCM: Init error', err);
+    }
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── NOTIFICATION BELL ────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+async function loadNotifications() {
+    try {
+        const d = await apiCall('../api/orders.php', 'get_notifications', {});
+        const badge = document.getElementById('notifBadge');
+        const list = document.getElementById('notifList');
+        
+        if (!d.success) {
+            list.innerHTML = '<div style="padding:2rem 1rem;text-align:center;color:var(--muted);font-size:.85rem;">Could not load alerts.</div>';
+            return;
+        }
+        
+        // Update badge
+        const unread = parseInt(d.unread || 0);
+        if (unread > 0) {
+            badge.textContent = unread > 99 ? '99+' : unread;
+            badge.style.display = 'inline';
+        } else {
+            badge.style.display = 'none';
+        }
+        
+        // Render list
+        const notifs = d.notifications || [];
+        if (notifs.length === 0) {
+            list.innerHTML = '<div style="padding:2rem 1rem;text-align:center;color:var(--muted);font-size:.85rem;">No notifications yet.</div>';
+            return;
+        }
+        
+        list.innerHTML = notifs.map(n => {
+            const time = new Date(n.created_at);
+            const ago = getTimeAgo(time);
+            return `
+                <div class="notif-item ${n.is_read == 0 ? 'unread' : ''}">
+                    <div class="notif-item-title">${escHtml(n.title)}</div>
+                    <div class="notif-item-msg">${escHtml(n.message)}</div>
+                    <div class="notif-item-time">${ago}</div>
+                </div>
+            `;
+        }).join('');
+    } catch(e) {
+        console.error('Notifications load error', e);
+    }
+}
+
+async function markNotifsRead() {
+    await apiCall('../api/orders.php', 'mark_notifications_read', {});
+    loadNotifications();
+}
+
+function getTimeAgo(date) {
+    const now = new Date();
+    const diff = Math.floor((now - date) / 1000);
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
+    return date.toLocaleDateString('en-IN', { day:'2-digit', month:'short' });
+}
+
+function escHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
 // ── Init ─────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     fetchStats();
     loadActivity();
     renderQR();
+    loadNotifications();
+    initFCM();
     
     // Disable pay later options in dropdown if not approved
     Array.from(document.getElementById('paymentMode')?.options || []).forEach(opt => {
@@ -1255,6 +1452,9 @@ document.addEventListener('DOMContentLoaded', () => {
             opt.disabled = true;
         }
     });
+
+    // Refresh notifications every 60 seconds
+    setInterval(loadNotifications, 60000);
 });
 </script>
 </body>

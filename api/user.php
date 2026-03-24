@@ -26,6 +26,8 @@ if (!hash_equals($_SESSION['csrf_token'], $csrfToken)) {
     respond(false, 'Invalid CSRF token. Request denied.');
 }
 
+// Market auto-discovery removed; users now assign freely or manually select zone.
+
 if ($action === 'update_profile') {
     $name       = htmlspecialchars(strip_tags($data['name'] ?? ''), ENT_QUOTES, 'UTF-8');
     $email      = filter_var($data['email'] ?? '', FILTER_SANITIZE_EMAIL);
@@ -43,9 +45,17 @@ if ($action === 'update_profile') {
         respond(false, 'Alternate contact must be exactly 10 digits.');
     }
 
+    $marketId = !empty($data['market_id']) ? (int)$data['market_id'] : null;
+    $lat = !empty($data['lat']) ? $data['lat'] : null;
+    $lng = !empty($data['lng']) ? $data['lng'] : null;
+
+    if (!$marketId) {
+        respond(false, 'Please select your Service Market Zone or Detect Location.');
+    }
+
     try {
-        $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, shop_address = ?, alt_contact = ? WHERE id = ?");
-        $stmt->execute([$name, $email, $shopAddress, $altContact ?: null, $userId]);
+        $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, shop_address = ?, alt_contact = ?, market_id = ?, lat = ?, lng = ? WHERE id = ?");
+        $stmt->execute([$name, $email, $shopAddress, $altContact ?: null, $marketId, $lat, $lng, $userId]);
         respond(true, 'Profile updated successfully!');
     } catch (\Exception $e) {
         respond(false, 'Failed to update profile. Error: ' . $e->getMessage());

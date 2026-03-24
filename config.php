@@ -81,22 +81,164 @@ function getFirebaseConfigJs() {
     ]);
 }
 
-// Helper to send Firebase Push Notifications (FCM v1)
+// ── Google OAuth2 Access Token (for FCM v1 API) ──
+function getGoogleAccessToken() {
+    // Cache token in a temp file to avoid regenerating on every call
+    $cacheFile = sys_get_temp_dir() . '/digiwash_fcm_token.json';
+    if (file_exists($cacheFile)) {
+        $cached = json_decode(file_get_contents($cacheFile), true);
+        if ($cached && isset($cached['access_token']) && $cached['expires_at'] > time()) {
+            return $cached['access_token'];
+        }
+    }
+
+    // Load service account JSON
+    $saPath = getenv('FIREBASE_SERVICE_ACCOUNT_JSON');
+    if (!$saPath) { error_log("FCM: FIREBASE_SERVICE_ACCOUNT_JSON env not set"); return null; }
+    
+    // Resolve relative to project root
+    $fullPath = __DIR__ . '/' . $saPath;
+    if (!file_exists($fullPath)) { error_log("FCM: Service account file not found: $fullPath"); return null; }
+    
+    $sa = json_decode(file_get_contents($fullPath), true);
+    if (!$sa || !isset($sa['private_key']) || !isset($sa['client_email'])) {
+        error_log("FCM: Invalid service account JSON"); return null;
+    }
+
+    // Build JWT
+    $now = time();
+    $header = base64_encode(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
+    $payload = base64_encode(json_encode([
+        'iss' => $sa['client_email'],
+        'sub' => $sa['client_email'],
+        'aud' => 'https://oauth2.googleapis.com/token',
+        'iat' => $now,
+        'exp' => $now + 3600,
+        'scope' => 'https://www.googleapis.com/auth/firebase.messaging'
+    ]));
+    
+    // URL-safe base64
+    $header = str_replace(['+', '/', '='], ['-', '_', ''], $header);
+    $payload = str_replace(['+', '/', '='], ['-', '_', ''], $payload);
+    
+    $signInput = "$header.$payload";
+    $signature = '';
+    $privateKey = openssl_pkey_get_private($sa['private_key']);
+    if (!$privateKey) { error_log("FCM: Failed to parse private key"); return null; }
+    
+    openssl_sign($signInput, $signature, $privateKey, OPENSSL_ALGO_SHA256);
+    $sig64 = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($signature));
+    $jwt = "$signInput.$sig64";
+
+    // Exchange JWT for access token
+    $ch = curl_init('https://oauth2.googleapis.com/token');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POSTFIELDS => http_build_query([
+            'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+            'assertion' => $jwt
+        ]),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
+        CURLOPT_TIMEOUT => 10,
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode !== 200 || !$response) {
+        error_log("FCM: OAuth2 token exchange failed (HTTP $httpCode): $response");
+        return null;
+    }
+
+    $tokenData = json_decode($response, true);
+    if (!isset($tokenData['access_token'])) {
+        error_log("FCM: No access_token in response"); return null;
+    }
+
+    // Cache for ~50 minutes (token lasts 60 min)
+    file_put_contents($cacheFile, json_encode([
+        'access_token' => $tokenData['access_token'],
+        'expires_at' => $now + 3000
+    ]));
+
+    return $tokenData['access_token'];
+}
+
+// ── Send Firebase Push Notification (FCM v1 API) ──
 function sendPushNotification($pdo, $userId, $title, $body) {
     if (!$pdo) return false;
     
-    // Search in all three tables since we don't know the role here
-    $token = null;
-    
-    // 1. Search in users table
     $stmt = $pdo->prepare("SELECT fcm_token FROM users WHERE id = ?");
     $stmt->execute([$userId]);
-    $token = $stmt->fetchColumn();
+    $fcmToken = $stmt->fetchColumn();
 
-    if (!$token) return false;
+    if (!$fcmToken) {
+        error_log("FCM: No FCM token for user $userId");
+        return false;
+    }
 
-    // This is a placeholder for the actual FCM V1 HTTP call.
-    error_log("FCM Push to User $userId: $title - $body");
-    return true;
+    $accessToken = getGoogleAccessToken();
+    if (!$accessToken) {
+        error_log("FCM: Could not get access token, notification skipped for user $userId");
+        return false;
+    }
+
+    $projectId = getenv('FIREBASE_PROJECT_ID') ?: 'digiwash-9c738';
+    $url = "https://fcm.googleapis.com/v1/projects/$projectId/messages:send";
+
+    $message = [
+        'message' => [
+            'token' => $fcmToken,
+            'notification' => [
+                'title' => $title,
+                'body' => $body,
+            ],
+            'webpush' => [
+                'notification' => [
+                    'icon' => '/assets/img/logo.png',
+                    'badge' => '/assets/img/logo.png',
+                    'requireInteraction' => true,
+                ],
+                'fcm_options' => [
+                    'link' => '/user/dashboard.php'
+                ]
+            ]
+        ]
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $accessToken,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($message),
+        CURLOPT_TIMEOUT => 10,
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode === 200) {
+        error_log("FCM: Push sent to user $userId — $title");
+        return true;
+    }
+
+    // Handle invalid/expired tokens
+    if ($httpCode === 404 || $httpCode === 400) {
+        $resp = json_decode($response, true);
+        $errorCode = $resp['error']['details'][0]['errorCode'] ?? '';
+        if (in_array($errorCode, ['UNREGISTERED', 'INVALID_ARGUMENT'])) {
+            // Clear stale token
+            $pdo->prepare("UPDATE users SET fcm_token = NULL WHERE id = ?")->execute([$userId]);
+            error_log("FCM: Cleared stale token for user $userId ($errorCode)");
+        }
+    }
+
+    error_log("FCM: Push failed for user $userId (HTTP $httpCode): $response");
+    return false;
 }
 ?>

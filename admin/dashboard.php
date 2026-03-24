@@ -136,12 +136,15 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
         <div class="menu-item active" id="nav-overview" onclick="switchTab('overview',this)">
             <i class="material-icons-outlined">insights</i> Overview
         </div>
-        <div class="sidebar-section">Management</div>
+        <div class="sidebar-section">Laundry Management</div>
         <div class="menu-item" id="nav-users" onclick="switchTab('users',this)">
             <i class="material-icons-outlined">people</i> Customers
         </div>
         <div class="menu-item" id="nav-orders" onclick="switchTab('orders',this)">
             <i class="material-icons-outlined">assignment</i> Orders
+        </div>
+        <div class="menu-item" id="nav-markets" onclick="switchTab('markets',this)">
+            <i class="material-icons-outlined">map</i> Markets & Zones
         </div>
         <div class="menu-item" id="nav-partners" onclick="switchTab('partners',this)">
             <i class="material-icons-outlined">local_shipping</i> Delivery Partners
@@ -151,8 +154,16 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             <span class="badge-count" id="returnsBadge" style="display:none">0</span>
         </div>
         <div class="menu-item" id="nav-products" onclick="switchTab('products',this)">
-            <i class="material-icons-outlined">inventory_2</i> Products
+            <i class="material-icons-outlined">inventory_2</i> Products (Laundry)
         </div>
+        
+        <div class="sidebar-section">Marketplace</div>
+        <a href="marketplace_products.php" class="menu-item" style="text-decoration:none;">
+            <i class="material-icons-outlined">storefront</i> Store Products
+        </a>
+        <a href="marketplace_orders.php" class="menu-item" style="text-decoration:none;">
+            <i class="material-icons-outlined">shopping_cart_checkout</i> Store Orders
+        </a>
         <div class="sidebar-section">Billing & Marketing</div>
         <div class="menu-item" id="nav-invoices" onclick="switchTab('invoices',this)">
             <i class="material-icons-outlined">receipt_long</i> Invoices & Setup
@@ -219,10 +230,14 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
                     <div class="panel-title">All Orders</div>
                     <div class="search-bar">
                         <input type="text" id="orderSearch" placeholder="Search order # / customer…" oninput="loadOrders()">
+                        <select id="orderMarketFilter" onchange="loadOrders()">
+                            <option value="">All Markets</option>
+                        </select>
                         <select id="orderFilter" onchange="loadOrders()">
                             <option value="all">All Status</option>
                             <option value="active">Active</option>
                             <option value="pending">Pending</option>
+                            <option value="assigned">Assigned</option>
                             <option value="in_process">In Process</option>
                             <option value="out_for_delivery">Out for Delivery</option>
                             <option value="delivered">Delivered</option>
@@ -234,6 +249,23 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
                     <table>
                         <thead><tr><th>#</th><th>Customer</th><th>Amount</th><th>Status</th><th>Partner</th><th>Date</th><th>Actions</th></tr></thead>
                         <tbody id="ordersBody"><tr><td colspan="7"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ══ MARKETS ══ -->
+        <section id="markets" class="section-content">
+            <div class="top-bar">
+                <div class="page-title">Market <span>Zones</span></div>
+                <button class="btn-sm btn-primary btn-lg" onclick="openModal('addMarketModal')">+ Add Market</button>
+            </div>
+            <div class="panel">
+                <div class="panel-header"><div class="panel-title">Service Areas</div></div>
+                <div class="tbl-wrap">
+                    <table>
+                        <thead><tr><th>ID</th><th>Market Name</th><th>Center (Lat, Lng)</th><th>Radius (km)</th><th>Created</th><th>Actions</th></tr></thead>
+                        <tbody id="marketsBody"><tr><td colspan="6"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -385,6 +417,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             <div class="form-group"><label>Full Name *</label><input type="text" id="pName" required placeholder="e.g. Rahul Kumar"></div>
             <div class="form-group"><label>Phone (10 digits) *</label><input type="tel" id="pPhone" required maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').substring(0,10)" placeholder="e.g. 9876543210"></div>
             <div class="form-group"><label>Login OTP (min 4 digits) *</label><input type="text" id="pOtp" required maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'')" placeholder="e.g. 123456"></div>
+            <div class="form-group"><label>Assign Market Zone</label><select id="pMarket"><option value="">No specific market</option></select></div>
             <div style="display:flex;gap:0.75rem;margin-top:1rem;">
                 <button type="submit" class="btn-sm btn-success btn-lg" id="btnAddPartner">Save Partner</button>
                 <button type="button" class="btn-sm btn-ghost btn-lg" onclick="closeModal('addPartnerModal')">Cancel</button>
@@ -403,6 +436,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             <input type="hidden" id="editPartnerId">
             <div class="form-group"><label>Full Name *</label><input type="text" id="editPName" required></div>
             <div class="form-group"><label>New OTP (leave blank to keep)</label><input type="text" id="editPOtp" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'')" placeholder="Leave blank = unchanged"></div>
+            <div class="form-group"><label>Assign Market Zone</label><select id="editPMarket"><option value="">No specific market</option></select></div>
             <div style="display:flex;gap:0.75rem;margin-top:1rem;">
                 <button type="submit" class="btn-sm btn-primary btn-lg">Save Changes</button>
                 <button type="button" class="btn-sm btn-ghost btn-lg" onclick="closeModal('editPartnerModal')">Cancel</button>
@@ -421,6 +455,39 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             <thead><tr><th>#</th><th>Customer</th><th>Phone</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
             <tbody id="partnerActivityBody"></tbody>
         </table></div>
+    </div>
+</div>
+
+<!-- Add Market Modal -->
+<div class="modal-overlay" id="addMarketModal">
+    <div class="modal-box">
+        <button class="modal-close" onclick="closeModal('addMarketModal')">✕</button>
+        <div class="modal-title">Create New Market Zone</div>
+        <form id="addMarketForm">
+            <div class="form-group"><label>Market Name *</label><input type="text" id="mName" required placeholder="e.g. Downtown"></div>
+            <div style="display:flex;gap:0.75rem;margin-top:1rem;">
+                <button type="submit" class="btn-sm btn-success btn-lg" id="btnAddMarket">Save Market</button>
+                <button type="button" class="btn-sm btn-ghost btn-lg" onclick="closeModal('addMarketModal')">Cancel</button>
+            </div>
+            <div class="form-msg" id="addMarketMsg"></div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Market Modal -->
+<div class="modal-overlay" id="editMarketModal">
+    <div class="modal-box">
+        <button class="modal-close" onclick="closeModal('editMarketModal')">✕</button>
+        <div class="modal-title">Edit Market Zone</div>
+        <form id="editMarketForm">
+            <input type="hidden" id="editMId">
+            <div class="form-group"><label>Market Name *</label><input type="text" id="editMName" required></div>
+            <div style="display:flex;gap:0.75rem;margin-top:1rem;">
+                <button type="submit" class="btn-sm btn-primary btn-lg">Save Changes</button>
+                <button type="button" class="btn-sm btn-ghost btn-lg" onclick="closeModal('editMarketModal')">Cancel</button>
+            </div>
+            <div class="form-msg" id="editMarketMsg"></div>
+        </form>
     </div>
 </div>
 
@@ -559,6 +626,7 @@ async function switchTab(id, el) {
     (el || document.getElementById('nav-'+id)).classList.add('active');
     if (id === 'marketing') loadCoupons();
     if (id === 'orders') loadOrders();
+    if (id === 'markets') loadMarkets();
     if (id === 'users') loadUsers();
     if (id === 'partners') loadPartners();
     if (id === 'returns') loadReturns('all');
@@ -811,9 +879,17 @@ async function loadOrders() {
         tbody.innerHTML = '<tr><td colspan="7"><div class="no-data"><i class="material-icons-outlined">inbox</i>No orders found.</div></td></tr>';
         return;
     }
+    
+    if (d.markets) {
+        const mFilter = document.getElementById('orderMarketFilter');
+        const currentM = mFilter.value;
+        mFilter.innerHTML = '<option value="">All Markets</option>' + d.markets.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
+        mFilter.value = currentM;
+    }
+
     const partners = d.delivery_partners;
     const makePartnerOpts = (selectedId) => '<option value="">Assign partner…</option>' +
-        partners.map(p => `<option value="${p.id}" ${p.id == selectedId ? 'selected' : ''}>${p.name}</option>`).join('');
+        partners.map(p => `<option value="${p.id}" ${p.id == selectedId ? 'selected' : ''}>${p.name} (${p.current_orders} load)</option>`).join('');
 
     tbody.innerHTML = d.orders.map(o => {
         const assignable = !['delivered','cancelled'].includes(o.status);
@@ -822,7 +898,7 @@ async function loadOrders() {
             .map(s => `<option value="${s}" ${o.status===s?'selected':''}>${s.replace(/_/g,' ')}</option>`).join('');
         return `<tr>
             <td><strong>#${o.id}</strong></td>
-            <td><div style="font-weight:600">${o.customer_name||'N/A'}</div><div style="font-size:0.78rem;color:#64748b">${o.customer_phone||''}</div></td>
+            <td><div style="font-weight:600">${o.customer_name||'N/A'}</div><div style="font-size:0.78rem;color:#64748b">${o.customer_phone||''}</div><div style="font-size:0.75rem;color:#6366f1;">${o.market_name? '📍 '+o.market_name:''}</div></td>
             <td>₹${o.total_amount}</td>
             <td>${statusBadge(o.status)}</td>
             <td>
@@ -879,33 +955,101 @@ async function loadPartners() {
         c.innerHTML = '<div class="no-data"><i class="material-icons-outlined">local_shipping</i>No partners yet. Add one!</div>';
         return;
     }
+    
+    if (d.markets) {
+        const mOpts = '<option value="">No specific market</option>' + d.markets.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
+        document.getElementById('pMarket').innerHTML = mOpts;
+        const currentE = document.getElementById('editPMarket').value;
+        document.getElementById('editPMarket').innerHTML = mOpts;
+        document.getElementById('editPMarket').value = currentE;
+    }
+
     c.innerHTML = d.partners.map(p => `
         <div class="partner-card">
             <div class="partner-avatar">${(p.name||'?')[0].toUpperCase()}</div>
             <div class="partner-info">
                 <h4>${p.name}</h4>
                 <p>📞 ${p.phone} &nbsp;|&nbsp; OTP: <code style="background:#f1f5f9;padding:1px 5px;border-radius:4px">${p.dummy_otp||'—'}</code></p>
+                <div style="font-size:0.75rem; margin-top:4px; color:#6366f1; font-weight:600;"><i class="material-icons-outlined" style="font-size:0.9rem;vertical-align:bottom;">map</i> ${p.market_name || 'Market Unassigned'} — ${p.is_online==1?'<span style="color:#10b981">🟢 Online</span>':'<span style="color:#ef4444">🔴 Offline</span>'}</div>
             </div>
             <div class="partner-stats">
+                <span>⚡ Payload: ${p.current_orders}</span>
                 <span>📦 ${p.total_assignments} assignments</span>
                 <span>✅ ${p.completed} delivered</span>
-                <span>🔄 ${p.active} active</span>
             </div>
             <div class="action-btns" style="margin-left:1rem;">
                 <button class="btn-sm btn-outline" onclick="viewPartnerActivity(${p.id},'${p.name.replace(/'/g,'')}')">Activity</button>
-                <button class="btn-sm btn-amber" onclick="openEditPartner(${p.id},'${p.name.replace(/'/g,'')}')">Edit</button>
+                <button class="btn-sm btn-amber" onclick="openEditPartner(${p.id},'${p.name.replace(/'/g,'')}','${p.market_id||''}')">Edit</button>
                 <button class="btn-sm btn-danger" onclick="deletePartner(${p.id},'${p.name.replace(/'/g,'')}')">Delete</button>
             </div>
         </div>
     `).join('');
 }
 
-function openEditPartner(id, name) {
+function openEditPartner(id, name, marketId) {
     document.getElementById('editPartnerId').value = id;
     document.getElementById('editPName').value = name;
     document.getElementById('editPOtp').value = '';
+    document.getElementById('editPMarket').value = marketId || '';
     openModal('editPartnerModal');
 }
+
+// ─────────────────────────────
+// MARKETS
+// ─────────────────────────────
+async function loadMarkets() {
+    const tbody = document.getElementById('marketsBody');
+    tbody.innerHTML = '<tr><td colspan="6"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr>';
+    const d = await api('get_markets');
+    if (!d.success || !d.markets.length) {
+        tbody.innerHTML = '<tr><td colspan="6"><div class="no-data">No market zones defined yet.</div></td></tr>';
+        return;
+    }
+    tbody.innerHTML = d.markets.map(m => `
+        <tr>
+            <td>#${m.id}</td>
+            <td><strong>${m.name}</strong></td>
+            <td style="font-size:0.8rem">${new Date(m.created_at).toLocaleDateString()}</td>
+            <td>
+                <div class="action-btns">
+                    <button class="btn-sm btn-amber" onclick="openEditMarket(${m.id},'${m.name.replace(/'/g,'')}')">Edit</button>
+                    <button class="btn-sm btn-danger" onclick="deleteMarket(${m.id},'${m.name.replace(/'/g,'')}')">Delete</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function openEditMarket(id, name) {
+    document.getElementById('editMId').value = id;
+    document.getElementById('editMName').value = name;
+    openModal('editMarketModal');
+}
+
+async function deleteMarket(id, name) {
+    if (!confirm(`Delete market zone "${name}"? Existing users/orders assigned to it will lose their market association.`)) return;
+    const d = await api('delete_market', { market_id: id });
+    if (d.success) loadMarkets(); else alert(d.message);
+}
+
+document.getElementById('addMarketForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('btnAddMarket');
+    btn.textContent = 'Saving…'; btn.disabled = true;
+    const d = await api('create_market', { name: document.getElementById('mName').value });
+    const msg = document.getElementById('addMarketMsg');
+    msg.textContent = d.message; msg.style.color = d.success ? '#10b981' : '#ef4444'; msg.style.display = 'block';
+    btn.textContent = 'Save Market'; btn.disabled = false;
+    if (d.success) setTimeout(() => { closeModal('addMarketModal'); e.target.reset(); msg.style.display='none'; loadMarkets(); }, 1200);
+});
+
+document.getElementById('editMarketForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const d = await api('update_market', { market_id: document.getElementById('editMId').value, name: document.getElementById('editMName').value });
+    const msg = document.getElementById('editMarketMsg');
+    msg.textContent = d.message; msg.style.color = d.success ? '#10b981' : '#ef4444'; msg.style.display = 'block';
+    if (d.success) setTimeout(() => { closeModal('editMarketModal'); msg.style.display='none'; loadMarkets(); }, 1200);
+});
 
 async function viewPartnerActivity(id, name) {
     document.getElementById('partnerActivityTitle').textContent = `Activity — ${name}`;
@@ -934,7 +1078,7 @@ document.getElementById('addPartnerForm').addEventListener('submit', async e => 
     const phone = document.getElementById('pPhone').value.replace(/\D/g,'');
     if (phone.length !== 10) { msg.textContent='Phone must be 10 digits'; msg.style.color='#ef4444'; msg.style.display='block'; return; }
     btn.textContent = 'Saving…'; btn.disabled = true;
-    const d = await api('create_delivery_partner', { name: document.getElementById('pName').value, phone, otp: document.getElementById('pOtp').value });
+    const d = await api('create_delivery_partner', { name: document.getElementById('pName').value, phone, otp: document.getElementById('pOtp').value, market_id: document.getElementById('pMarket').value });
     msg.textContent = d.message; msg.style.color = d.success ? '#10b981' : '#ef4444'; msg.style.display = 'block';
     btn.textContent = 'Save Partner'; btn.disabled = false;
     if (d.success) { setTimeout(() => { closeModal('addPartnerModal'); e.target.reset(); msg.style.display='none'; loadPartners(); loadStats(); }, 1500); }
@@ -943,7 +1087,7 @@ document.getElementById('addPartnerForm').addEventListener('submit', async e => 
 document.getElementById('editPartnerForm').addEventListener('submit', async e => {
     e.preventDefault();
     const msg = document.getElementById('editPartnerMsg');
-    const d = await api('update_delivery_partner', { partner_id: document.getElementById('editPartnerId').value, name: document.getElementById('editPName').value, otp: document.getElementById('editPOtp').value });
+    const d = await api('update_delivery_partner', { partner_id: document.getElementById('editPartnerId').value, name: document.getElementById('editPName').value, otp: document.getElementById('editPOtp').value, market_id: document.getElementById('editPMarket').value });
     msg.textContent = d.message; msg.style.color = d.success ? '#10b981' : '#ef4444'; msg.style.display = 'block';
     if (d.success) setTimeout(() => { closeModal('editPartnerModal'); msg.style.display='none'; loadPartners(); }, 1200);
 });

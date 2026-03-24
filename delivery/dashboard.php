@@ -4,6 +4,9 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'delivery') {
     header('Location: ../index.php'); exit;
 }
 $partnerName = $_SESSION['name'] ?? 'Partner';
+$stmt = $pdo->prepare("SELECT is_online FROM users WHERE id = ?");
+$stmt->execute([$_SESSION['user_id']]);
+$isOnline = (int)$stmt->fetchColumn() === 1;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -129,6 +132,13 @@ $partnerName = $_SESSION['name'] ?? 'Partner';
             </div>
         </div>
 
+        <div style="padding:0 1rem 1rem;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#94a3b8; font-size:0.85rem; font-weight:600;">
+                <span style="flex:1">Accepting Orders</span>
+                <input type="checkbox" id="onlineToggle" onchange="toggleOnline(this.checked)" <?= $isOnline ? 'checked' : '' ?> style="width:16px;height:16px;accent-color:#10b981;">
+            </label>
+        </div>
+
         <div class="menu-item active" id="nav-pickups" onclick="switchTab('pickups',this)">
             <i class="material-icons-outlined">hail</i> Pickups
             <span class="menu-badge" id="badgePickups" style="display:none">0</span>
@@ -146,6 +156,10 @@ $partnerName = $_SESSION['name'] ?? 'Partner';
         </div>
         <div class="menu-item" id="nav-returns" onclick="switchTab('returns',this)">
             <i class="material-icons-outlined">assignment_return</i> Return Pickups
+        </div>
+        <div class="menu-item" id="nav-marketplace" onclick="switchTab('marketplace',this)">
+            <i class="material-icons-outlined">storefront</i> Marketplace Orders
+            <span class="menu-badge" id="badgeMarketplace" style="display:none">0</span>
         </div>
 
         <div style="margin-top:auto; padding-top:1.5rem;">
@@ -212,6 +226,16 @@ $partnerName = $_SESSION['name'] ?? 'Partner';
             </div>
             <p style="color:#64748b; font-size:0.85rem; margin-bottom:1.5rem;">Approved return requests — pick these up from the customer's location.</p>
             <div id="returnsContainer"><div class="empty-state"><i class="material-icons-outlined">hourglass_empty</i><p>Loading…</p></div></div>
+        </section>
+
+        <!-- ══ MARKETPLACE ══ -->
+        <section id="marketplace" class="section-content">
+            <div class="page-header">
+                <div class="page-title">🛍️ Marketplace Orders</div>
+                <button class="btn-action btn-ghost" onclick="loadMarketplace()">↻ Refresh</button>
+            </div>
+            <p style="color:#64748b; font-size:0.85rem; margin-bottom:1.5rem;">Update the status of your assigned marketplace deliveries.</p>
+            <div id="marketplaceContainer"><div class="empty-state"><i class="material-icons-outlined">hourglass_empty</i><p>Loading…</p></div></div>
         </section>
 
     </main>
@@ -315,7 +339,9 @@ function switchTab(id, el) {
     document.getElementById(id).classList.add('active');
     document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
     (el || document.getElementById('nav-'+id)).classList.add('active');
-    loadSection(id);
+    
+    if (id === 'marketplace') loadMarketplace();
+    else loadSection(id);
 }
 
 // ── Stats ──
@@ -366,8 +392,8 @@ async function loadSection(type) {
 // ── Render order card ──
 function renderCard(o, type) {
     const name = o.customer_name || 'Customer';
-    const phone = o.phone || o.customer_phone || '—';
-    const addr = o.shop_address || '—';
+    const phone = o.phone || o.customer_phone || '';
+    const addr = o.pickup_address || o.shop_address || 'Address not provided';
     const date = new Date(o.created_at || o.return_date).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
     const amount = o.total_amount ? `₹${o.total_amount}` : '';
 
@@ -376,8 +402,13 @@ function renderCard(o, type) {
     let actions = '';
 
     if (type === 'pickups') {
-        statusBadge = '<span class="badge b-amber">Pending Pickup</span>';
-        actions = `<button class="btn-action btn-pickup" onclick="fulfillPickup(${o.id})"><i class="material-icons-outlined" style="font-size:16px">shopping_bag</i> Picked Up</button>`;
+        if (o.status === 'assigned') {
+            statusBadge = '<span class="badge b-blue">New Assignment</span>';
+            actions = `<button class="btn-action btn-primary" onclick="acceptOrder(${o.id})"><i class="material-icons-outlined" style="font-size:16px">check_circle</i> Accept Order</button>`;
+        } else {
+            statusBadge = '<span class="badge b-amber">Pending Pickup</span>';
+            actions = `<button class="btn-action btn-pickup" onclick="fulfillPickup(${o.id})"><i class="material-icons-outlined" style="font-size:16px">shopping_bag</i> Picked Up</button>`;
+        }
     } else if (type === 'inprocess') {
         statusBadge = '<span class="badge b-amber">In Processing</span>';
         actions = `<button class="btn-action btn-otp" onclick="openReadyModal(${o.id})"><i class="material-icons-outlined" style="font-size:16px">local_shipping</i> Mark Ready</button>`;
@@ -396,18 +427,22 @@ function renderCard(o, type) {
         actions = `<div style="font-size:0.82rem;color:#64748b;max-width:200px">${o.reason||'No reason given'}</div>`;
     }
 
+    const btnCall = phone ? `<a href="tel:${phone}" style="background:#e0e7ff; color:#4f46e5; text-decoration:none; padding:4px 8px; border-radius:6px; font-weight:600; font-size:0.75rem; display:inline-flex; align-items:center; gap:4px;"><i class="material-icons-outlined" style="font-size:14px">phone</i> Call Cust</a>` : '';
+    const btnNav = o.lat && o.lng ? `<a href="https://www.google.com/maps/dir/?api=1&destination=${o.lat},${o.lng}" target="_blank" style="background:#dcfce7; color:#16a34a; text-decoration:none; padding:4px 8px; border-radius:6px; font-weight:600; font-size:0.75rem; display:inline-flex; align-items:center; gap:4px;"><i class="material-icons-outlined" style="font-size:14px">navigation</i> Navigate</a>` : '';
+    const utilBtns = (btnCall || btnNav) ? `<div style="display:flex;gap:5px;margin-top:6px;margin-bottom:6px;">${btnCall}${btnNav}</div>` : '';
+
     return `
         <div class="order-card ${cardClass}">
             <div class="card-row">
                 <div class="card-info">
                     <h4>Order #${o.id} — ${name}</h4>
-                    <p><i class="material-icons-outlined">call</i> ${phone}</p>
                     <p><i class="material-icons-outlined">location_on</i> ${addr}</p>
                     <p><i class="material-icons-outlined">calendar_today</i> ${date}</p>
                     ${amount ? `<p><i class="material-icons-outlined">payments</i> <strong>${amount}</strong></p>` : ''}
                 </div>
                 <div class="card-actions">
                     ${statusBadge}
+                    ${utilBtns}
                     ${actions}
                 </div>
             </div>
@@ -416,6 +451,17 @@ function renderCard(o, type) {
 }
 
 // ── Actions ──
+async function toggleOnline(val) {
+    const d = await api('toggle_online', { is_online: val });
+    if (!d.success) { alert(d.message); document.getElementById('onlineToggle').checked = !val; }
+}
+
+async function acceptOrder(orderId) {
+    const d = await api('accept_order', { order_id: orderId });
+    if (d.success) { loadSection('pickups'); loadStats(); }
+    else alert(d.message);
+}
+
 async function fulfillPickup(orderId) {
     if (!confirm('Confirm you have collected the items from the shop?')) return;
     const d = await api('fulfill_pickup', { order_id: orderId });
@@ -552,7 +598,85 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 document.addEventListener('DOMContentLoaded', () => {
     loadStats();
     loadSection('pickups');
+    loadMarketplace();
 });
+
+async function loadMarketplace() {
+    const container = document.getElementById('marketplaceContainer');
+    if (!container) return;
+    container.innerHTML = '<div class="empty-state"><i class="material-icons-outlined">hourglass_empty</i><p>Loading…</p></div>';
+    try {
+        const r = await fetch('../api/marketplace_orders.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'get_orders', csrf_token: csrf })
+        });
+        const d = await r.json();
+        if (!d.success) { container.innerHTML = '<div class="empty-state"><p>' + d.message + '</p></div>'; return; }
+        
+        const activeOrders = d.orders.filter(o => !['delivered', 'cancelled'].includes(o.status));
+        setBadge('badgeMarketplace', activeOrders.length);
+
+        if (!d.orders || !d.orders.length) {
+            container.innerHTML = `<div class="empty-state"><i class="material-icons-outlined">inbox</i><p>No marketplace orders assigned.</p></div>`;
+            return;
+        }
+
+        container.innerHTML = d.orders.map(o => {
+            const items = o.items.map(i => `${i.quantity}x ${i.name}`).join(', ');
+            const statusMap = {
+                'assigned': { lbl: 'Assigned', btn: 'Mark Picked Up', next: 'picked_up', icon: 'shopping_bag', color: 'b-blue' },
+                'picked_up': { lbl: 'Picked Up', btn: 'Mark Out for Delivery', next: 'out_for_delivery', icon: 'local_shipping', color: 'b-purple' },
+                'out_for_delivery': { lbl: 'Out for Delivery', btn: 'Mark Delivered ✓', next: 'delivered', icon: 'check_circle', color: 'b-purple' }
+            };
+
+            let actions = '';
+            let sBadge = `<span class="badge ${statusMap[o.status] ? statusMap[o.status].color : 'b-gray'}">${statusMap[o.status] ? statusMap[o.status].lbl : o.status}</span>`;
+            if (o.status === 'delivered') sBadge = '<span class="badge b-green">Delivered ✓</span>';
+            else if (o.status === 'cancelled') sBadge = '<span class="badge b-red">Cancelled</span>';
+
+            if (statusMap[o.status]) {
+                const conf = statusMap[o.status];
+                actions = `<button class="btn-action btn-primary" onclick="updateMktStatus(${o.id}, '${conf.next}')"><i class="material-icons-outlined" style="font-size:16px">${conf.icon}</i> ${conf.btn}</button>`;
+            }
+
+            const isDone = o.status === 'delivered' || o.status === 'cancelled';
+            const btnCall = o.user_phone ? `<a href="tel:${o.user_phone}" style="background:#e0e7ff; color:#4f46e5; text-decoration:none; padding:4px 8px; border-radius:6px; font-weight:600; font-size:0.75rem; display:inline-flex; align-items:center; gap:4px;"><i class="material-icons-outlined" style="font-size:14px">phone</i> Call</a>` : '';
+            return `
+                <div class="order-card ${isDone ? 'done' : 'pickup'}">
+                    <div class="card-row">
+                        <div class="card-info">
+                            <h4>Mkt Order #${o.id} — ${o.user_name}</h4>
+                            <p style="color:#0f172a;font-weight:600;margin-bottom:6px;">Items: ${items}</p>
+                            <p><i class="material-icons-outlined">payments</i> <strong>₹${o.total_amount}</strong> (${o.payment_type.toUpperCase()})</p>
+                            <p><i class="material-icons-outlined">calendar_today</i> ${new Date(o.created_at).toLocaleDateString()}</p>
+                        </div>
+                        <div class="card-actions">
+                            ${sBadge}
+                            ${btnCall ? `<div style="margin:4px 0">${btnCall}</div>` : ''}
+                            ${actions}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+    } catch(e) { container.innerHTML = '<div class="empty-state"><p>Error connecting</p></div>'; }
+}
+
+async function updateMktStatus(id, newStatus) {
+    if (!confirm('Update marketplace order status?')) return;
+    try {
+        const r = await fetch('../api/update_marketplace_status.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'update_status', order_id: id, status: newStatus, csrf_token: csrf })
+        });
+        const d = await r.json();
+        alert(d.message);
+        if (d.success) loadMarketplace();
+    } catch(e) { alert('Error updating'); }
+}
 </script>
 </body>
 </html>

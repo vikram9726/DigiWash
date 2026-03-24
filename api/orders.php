@@ -94,11 +94,11 @@ if ($action === 'create_order') {
     }
 
     // 1. Check profile
-    $stmt = $pdo->prepare("SELECT name, shop_address, pay_later_plan, pay_later_status FROM users WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT name, shop_address, pay_later_plan, pay_later_status, market_id, lat, lng FROM users WHERE id = ?");
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
-    if (empty($user['name']) || empty($user['shop_address'])) {
-        respond(false, 'Please complete your profile before creating an order.');
+    if (empty($user['name']) || empty($user['shop_address']) || empty($user['market_id']) || empty($user['lat']) || empty($user['lng'])) {
+        respond(false, 'Please complete your profile and "Detect Location" to set your precise coordinates before creating an order.');
     }
 
     $paymentMode = in_array(strtoupper($data['payment_mode'] ?? 'COD'), ['COD', 'ONLINE', 'PAY_LATER_4', 'PAY_LATER_8', 'PAY_LATER_12']) ? strtoupper($data['payment_mode']) : 'COD';
@@ -232,9 +232,29 @@ if ($action === 'create_order') {
             $transactionId = $r_payId;
         }
 
+        // --- Fetch best delivery boy ---
+        $deliveryId = null;
+        $orderStatus = 'pending';
+        
+        $dbStmt = $pdo->prepare("
+            SELECT id FROM users 
+            WHERE role = 'delivery' AND is_online = 1 AND market_id = ? 
+            ORDER BY current_orders ASC, id ASC LIMIT 1
+        ");
+        $dbStmt->execute([$user['market_id']]);
+        $bestBoy = $dbStmt->fetch();
+        
+        if ($bestBoy) {
+            $deliveryId = $bestBoy['id'];
+            $orderStatus = 'assigned';
+            
+            // Increment the boy's load
+            $pdo->prepare("UPDATE users SET current_orders = current_orders + 1 WHERE id = ?")->execute([$deliveryId]);
+        }
+
         // --- Insert order ---
-        $stmt = $pdo->prepare("INSERT INTO orders (user_id, status, total_amount, payment_status, instructions) VALUES (?, 'pending', ?, ?, ?)");
-        $stmt->execute([$userId, $totalAmount, $paymentState, $instructions]);
+        $stmt = $pdo->prepare("INSERT INTO orders (user_id, market_id, delivery_id, status, total_amount, payment_status, instructions, lat, lng, pickup_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$userId, $user['market_id'], $deliveryId, $orderStatus, $totalAmount, $paymentState, $instructions, $user['lat'], $user['lng'], $user['shop_address']]);
         $orderId = $pdo->lastInsertId();
 
         // --- Insert order items (if product-based) ---
