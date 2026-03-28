@@ -323,10 +323,25 @@ if ($action === 'cancel_order') {
     if (!$orderId) respond(false, 'Invalid order.');
     try {
         $pdo->beginTransaction();
-        $pdo->prepare("UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = ?")->execute([$orderId]);
-        $pdo->prepare("UPDATE payments SET status = 'completed', updated_at = NOW() WHERE order_id = ? AND status = 'remaining'")->execute([$orderId]);
+        // Get the delivery_id before cancelling so we can release the load counter
+        $stmtOrd = $pdo->prepare("SELECT delivery_id FROM orders WHERE id = ?");
+        $stmtOrd->execute([$orderId]);
+        $orderRow = $stmtOrd->fetch();
+
+        $pdo->prepare("UPDATE orders SET status = 'cancelled', delivery_id = NULL, updated_at = NOW() WHERE id = ?")->execute([$orderId]);
+
+        // Release delivery partner's active order count if assigned
+        if (!empty($orderRow['delivery_id'])) {
+            $pdo->prepare("UPDATE users SET current_orders = GREATEST(0, current_orders - 1) WHERE id = ?")->execute([$orderRow['delivery_id']]);
+        }
+
+        // Delete the remaining payment record (do NOT mark as 'completed' — that inflates revenue)
+        $pdo->prepare("DELETE FROM payments WHERE order_id = ? AND status = 'remaining'")->execute([$orderId]);
+        // Release any coupon usage for the order
+        $pdo->prepare("DELETE FROM coupon_usages WHERE order_id = ?")->execute([$orderId]);
+
         $pdo->commit();
-        respond(true, 'Order cancelled.');
+        respond(true, 'Order cancelled successfully.');
     } catch (\Exception $e) {
         $pdo->rollBack();
         respond(false, 'DB Error: ' . $e->getMessage());

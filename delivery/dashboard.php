@@ -77,6 +77,7 @@ $isOnline = (int)$stmt->fetchColumn() === 1;
         .btn-qr      { background: #dbeafe; color: #1d4ed8; }
         .btn-otp     { background: #dcfce7; color: #15803d; }
         .btn-bypass  { background: #fee2e2; color: #b91c1c; }
+        .btn-cancel  { background: #fff1f2; color: #be123c; border: 1.5px solid #fecdd3; }
         .btn-primary { background: #6366f1; color: white; }
         .btn-ghost   { background: #f1f5f9; color: #475569; }
 
@@ -404,10 +405,16 @@ function renderCard(o, type) {
     if (type === 'pickups') {
         if (o.status === 'assigned') {
             statusBadge = '<span class="badge b-blue">New Assignment</span>';
-            actions = `<button class="btn-action btn-primary" onclick="acceptOrder(${o.id})"><i class="material-icons-outlined" style="font-size:16px">check_circle</i> Accept Order</button>`;
+            actions = `
+                <button class="btn-action btn-primary" onclick="acceptOrder(${o.id})"><i class="material-icons-outlined" style="font-size:16px">check_circle</i> Accept Order</button>
+                <button class="btn-action btn-cancel" onclick="cancelPickup(${o.id})" style="margin-top:6px;"><i class="material-icons-outlined" style="font-size:16px">cancel</i> Cancel</button>
+            `;
         } else {
             statusBadge = '<span class="badge b-amber">Pending Pickup</span>';
-            actions = `<button class="btn-action btn-pickup" onclick="fulfillPickup(${o.id})"><i class="material-icons-outlined" style="font-size:16px">shopping_bag</i> Picked Up</button>`;
+            actions = `
+                <button class="btn-action btn-pickup" onclick="fulfillPickup(${o.id})"><i class="material-icons-outlined" style="font-size:16px">shopping_bag</i> Picked Up</button>
+                <button class="btn-action btn-cancel" onclick="cancelPickup(${o.id})" style="margin-top:6px;"><i class="material-icons-outlined" style="font-size:16px">undo</i> Release Order</button>
+            `;
         }
     } else if (type === 'inprocess') {
         statusBadge = '<span class="badge b-amber">In Processing</span>';
@@ -463,10 +470,37 @@ async function acceptOrder(orderId) {
 }
 
 async function fulfillPickup(orderId) {
-    if (!confirm('Confirm you have collected the items from the shop?')) return;
+    if (!confirm('Confirm you have physically collected the items?')) return;
     const d = await api('fulfill_pickup', { order_id: orderId });
-    if (d.success) { loadSection('pickups'); loadStats(); }
-    else alert(d.message);
+    if (d.success) { 
+        showToast('✅ Pickup confirmed! Order sent to processing.', 'success');
+        loadSection('pickups'); 
+        loadStats(); 
+    } else {
+        showToast('❌ ' + d.message, 'error');
+    }
+}
+
+async function cancelPickup(orderId) {
+    if (!confirm(`Release Order #${orderId} back to the pool? You will be unassigned from this order.`)) return;
+    const d = await api('cancel_pickup', { order_id: orderId });
+    if (d.success) {
+        showToast('↩️ Order released back to pool.', 'info');
+        loadSection('pickups');
+        loadStats();
+    } else {
+        showToast('❌ ' + d.message, 'error');
+    }
+}
+
+// ── Inline Toast for Delivery Dashboard ──
+function showToast(msg, type = 'info') {
+    const colors = { success: '#10b981', error: '#ef4444', info: '#6366f1' };
+    const el = document.createElement('div');
+    el.style.cssText = `position:fixed;bottom:24px;right:24px;background:${colors[type]||'#334155'};color:white;padding:0.85rem 1.4rem;border-radius:12px;font-weight:700;font-size:0.9rem;z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,0.2);animation:fadeUp .3s ease;`;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
 }
 
 function openReadyModal(orderId) {

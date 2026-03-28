@@ -264,8 +264,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
                 <div class="panel-header"><div class="panel-title">Service Areas</div></div>
                 <div class="tbl-wrap">
                     <table>
-                        <thead><tr><th>ID</th><th>Market Name</th><th>Center (Lat, Lng)</th><th>Radius (km)</th><th>Created</th><th>Actions</th></tr></thead>
-                        <tbody id="marketsBody"><tr><td colspan="6"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
+                        <thead><tr><th>ID</th><th>Market Name</th><th>Created</th><th>Actions</th></tr></thead>
+                        <tbody id="marketsBody"><tr><td colspan="4"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
                     </table>
                 </div>
             </div>

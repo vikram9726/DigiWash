@@ -135,27 +135,47 @@ if ($action === 'accept_order') {
 
 // --- FULFILL PICKUP ---
 if ($action === 'fulfill_pickup') {
-    $orderId = $data['order_id'] ?? 0;
-    
-    // In a real scenario, the delivery partner takes the clothes and marks it "picked_up"
-    // Which then transitions to "in_process" (washing) at the facility
+    $orderId = (int)($data['order_id'] ?? 0);
+    if (!$orderId) respond(false, 'Invalid order ID.');
+
     try {
-        $stmt = $pdo->prepare("UPDATE orders SET status = 'in_process', picked_up_at = NOW(), updated_at = NOW() WHERE id = ? AND delivery_id = ? AND status = 'pending'");
+        // Accept both 'assigned' and 'pending' statuses so the button always works
+        $stmt = $pdo->prepare("UPDATE orders SET status = 'in_process', picked_up_at = NOW(), updated_at = NOW() WHERE id = ? AND delivery_id = ? AND status IN ('assigned', 'pending')");
         $stmt->execute([$orderId, $deliveryId]);
-        
+
         if ($stmt->rowCount() > 0) {
-            // Trigger Notification
             $stmtUser = $pdo->prepare("SELECT user_id FROM orders WHERE id = ?");
             $stmtUser->execute([$orderId]);
             $ownerId = $stmtUser->fetchColumn();
-            $title = "Clothes Picked Up";
-            $msg = "Your clothes have been successfully collected and are now making their way to our laundry facility!";
+            $title = "Clothes Picked Up 🛍️";
+            $msg = "Your clothes have been successfully collected and are now heading to our laundry facility!";
             $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)")->execute([$ownerId, $title, $msg]);
             sendPushNotification($pdo, $ownerId, $title, $msg);
-            
-            respond(true, 'Pickup marked as successfully collected & sent to processing.');
+            respond(true, 'Pickup confirmed! Order is now in processing.');
         } else {
-            respond(false, 'Failed to update. Order might not be assigned to you or already picked up.');
+            respond(false, 'Could not update. The order may already be picked up, or not assigned to you.');
+        }
+    } catch (\Exception $e) {
+        respond(false, 'Database Error: ' . $e->getMessage());
+    }
+}
+
+// --- CANCEL / RELEASE PICKUP ---
+if ($action === 'cancel_pickup') {
+    $orderId = (int)($data['order_id'] ?? 0);
+    if (!$orderId) respond(false, 'Invalid order ID.');
+
+    try {
+        // Only allow cancelling orders in 'assigned' or 'pending' stage (not yet picked up)
+        $stmt = $pdo->prepare("UPDATE orders SET status = 'pending', delivery_id = NULL, updated_at = NOW() WHERE id = ? AND delivery_id = ? AND status IN ('assigned', 'pending')");
+        $stmt->execute([$orderId, $deliveryId]);
+
+        if ($stmt->rowCount() > 0) {
+            // Decrement partner's active order count
+            $pdo->prepare("UPDATE users SET current_orders = GREATEST(0, current_orders - 1) WHERE id = ?")->execute([$deliveryId]);
+            respond(true, 'Order released back to the pool successfully.');
+        } else {
+            respond(false, 'Cannot cancel. Order may already be picked up or not assigned to you.');
         }
     } catch (\Exception $e) {
         respond(false, 'Database Error: ' . $e->getMessage());

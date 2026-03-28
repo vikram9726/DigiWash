@@ -352,25 +352,33 @@ if ($action === 'cancel_order') {
     $orderId = (int)($data['order_id'] ?? 0);
     if (!$orderId) respond(false, 'Invalid order ID.');
 
-    $stmt = $pdo->prepare("SELECT status FROM orders WHERE id = ? AND user_id = ?");
+    $stmt = $pdo->prepare("SELECT status, delivery_id FROM orders WHERE id = ? AND user_id = ?");
     $stmt->execute([$orderId, $userId]);
     $order = $stmt->fetch();
 
     if (!$order) {
         respond(false, 'Order not found.');
     }
-    if ($order['status'] !== 'pending') {
-        respond(false, 'Cannot cancel because your order has already been processed or picked up.');
+
+    // Allow cancel only if not yet physically picked up
+    $cancellableStatuses = ['pending', 'assigned'];
+    if (!in_array($order['status'], $cancellableStatuses)) {
+        respond(false, 'Cannot cancel — your order has already been picked up by the delivery partner.');
     }
 
     try {
         $pdo->beginTransaction();
-        
-        $pdo->prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?")->execute([$orderId]);
-        
+
+        $pdo->prepare("UPDATE orders SET status = 'cancelled', delivery_id = NULL, updated_at = NOW() WHERE id = ?")->execute([$orderId]);
+
+        // If a delivery partner was assigned, release their load counter
+        if ($order['delivery_id']) {
+            $pdo->prepare("UPDATE users SET current_orders = GREATEST(0, current_orders - 1) WHERE id = ?")->execute([$order['delivery_id']]);
+        }
+
         // Remove active payment dues to prevent blocking new orders
         $pdo->prepare("DELETE FROM payments WHERE order_id = ? AND status = 'remaining'")->execute([$orderId]);
-        
+
         // Release coupon usage
         $pdo->prepare("DELETE FROM coupon_usages WHERE order_id = ?")->execute([$orderId]);
 

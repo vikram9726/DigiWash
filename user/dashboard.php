@@ -36,215 +36,7 @@ $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
     <!-- Firebase SDKs for Push Notifications -->
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-messaging-compat.js"></script>
-    <style>
-        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-        :root{
-            --bg:#f0f2f8;
-            --sidebar-bg:#0f172a;
-            --card:white;
-            --primary:#6366f1;
-            --primary-d:#4f46e5;
-            --success:#10b981;
-            --danger:#ef4444;
-            --amber:#f59e0b;
-            --blue:#3b82f6;
-            --text:#0f172a;
-            --muted:#64748b;
-            --border:#e2e8f0;
-            --sidebar-w:240px;
-            --radius:16px;
-        }
-        body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
-
-        /* ── Layout ── */
-        .app-wrap{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;}
-
-        /* ── Sidebar ── */
-        .sidebar{background:var(--sidebar-bg);display:flex;flex-direction:column;padding:1.5rem 1rem;gap:4px;position:sticky;top:0;height:100vh;overflow-y:auto;}
-        .sidebar-brand{display:flex;align-items:center;gap:10px;color:white;font-weight:900;font-size:1.15rem;padding:0.5rem 0.75rem 1.25rem;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:0.75rem;}
-        .sidebar-brand i{color:var(--success);font-size:1.8rem;}
-        .user-chip{display:flex;align-items:center;gap:10px;padding:0.75rem;background:rgba(255,255,255,0.06);border-radius:12px;margin-bottom:1rem;}
-        .user-av{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--primary),var(--primary-d));display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:1rem;flex-shrink:0;}
-        .user-info-name{color:white;font-weight:700;font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-        .user-info-phone{color:#64748b;font-size:0.72rem;}
-        .nav-section{font-size:0.7rem;font-weight:700;color:#475569;letter-spacing:.08em;text-transform:uppercase;padding:0.75rem 0.75rem 0.3rem;margin-top:0.5rem;}
-        .nav-item{display:flex;align-items:center;gap:12px;padding:0.7rem 1rem;border-radius:10px;color:#94a3b8;font-weight:600;font-size:0.875rem;cursor:pointer;transition:all 0.18s;}
-        .nav-item:hover{background:rgba(255,255,255,0.06);color:white;}
-        .nav-item.active{background:linear-gradient(135deg,var(--primary),var(--primary-d));color:white;box-shadow:0 4px 12px rgba(99,102,241,0.35);}
-        .nav-item i{font-size:1.2rem;flex-shrink:0;}
-        .nav-badge{background:var(--danger);color:white;border-radius:999px;font-size:0.68rem;padding:1px 7px;margin-left:auto;font-weight:800;}
-
-        /* ── Main ── */
-        .main{padding:2rem;overflow-y:auto;}
-        .section{display:none;}
-        .section.active{display:block;animation:slideUp 0.3s ease;}
-        @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-
-        /* ── Page header ── */
-        .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.75rem;flex-wrap:wrap;gap:1rem;}
-        .page-title{font-size:1.6rem;font-weight:900;color:var(--text);}
-        .page-title span{color:var(--primary);}
-
-        /* ── Cards ── */
-        .card{background:var(--card);border-radius:var(--radius);padding:1.5rem;box-shadow:0 1px 4px rgba(0,0,0,0.06);}
-        .card-sm{background:var(--card);border-radius:14px;padding:1.2rem;box-shadow:0 1px 4px rgba(0,0,0,0.06);}
-
-        /* ── Stats ── */
-        .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1.75rem;}
-        .stat-box{background:var(--card);border-radius:14px;padding:1.25rem 1.5rem;box-shadow:0 1px 4px rgba(0,0,0,0.06);border-left:4px solid var(--primary);display:flex;flex-direction:column;gap:4px;}
-        .stat-box.green{border-left-color:var(--success);}
-        .stat-box.red{border-left-color:var(--danger);}
-        .stat-box.amber{border-left-color:var(--amber);}
-        .stat-lbl{font-size:0.78rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
-        .stat-val{font-size:2rem;font-weight:900;color:var(--text);line-height:1;}
-        .stat-sub{font-size:0.75rem;color:var(--muted);}
-
-        /* ── Notifications ── */
-        .notif-drop{display:none;position:absolute;top:54px;right:0;width:340px;background:var(--card);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,0.15);z-index:900;flex-direction:column;overflow:hidden;}
-        .notif-drop.open{display:flex !important;animation:fadeDown .2s ease;}
-        @keyframes fadeDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
-        .notif-item { padding: 1rem; border-bottom: 1px solid var(--border); cursor: pointer; transition: all .15s; }
-        .notif-item:hover { background: #f8fafc; }
-        .notif-item:last-child { border-bottom: none; }
-        .notif-item.unread { background: #f8faff; border-left: 3px solid var(--primary); }
-        .notif-item-title { font-size: .85rem; font-weight: 800; color: var(--text); margin-bottom: 3px; }
-        .notif-item-msg { font-size: .78rem; color: var(--muted); line-height: 1.4; }
-        .notif-item-time { font-size: .68rem; color: var(--primary); margin-top: 6px; font-weight: 700; }
-
-        /* ── Alert banner ── */
-        .alert-banner{display:flex;align-items:center;gap:12px;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.5rem;}
-        .alert-banner i{color:#d97706;font-size:1.4rem;}
-        .alert-banner p{font-size:0.9rem;font-weight:600;color:#92400e;flex:1;}
-        .alert-banner button{background:#d97706;color:white;border:none;border-radius:8px;padding:.4rem .9rem;font-size:0.82rem;font-weight:700;cursor:pointer;white-space:nowrap;}
-
-        /* ── Btn ── */
-        .btn{display:inline-flex;align-items:center;gap:7px;padding:.6rem 1.2rem;border-radius:10px;font-weight:700;font-size:0.9rem;cursor:pointer;border:none;transition:all .15s;}
-        .btn:hover{filter:brightness(.92);transform:translateY(-1px);}
-        .btn-primary{background:var(--primary);color:white;}
-        .btn-success{background:var(--success);color:white;}
-        .btn-danger{background:var(--danger);color:white;}
-        .btn-ghost{background:#f1f5f9;color:var(--muted);}
-        .btn-outline{background:white;color:var(--primary);border:1.5px solid var(--primary);}
-        .btn-sm{padding:.35rem .75rem;font-size:0.8rem;border-radius:8px;}
-        .btn[disabled]{opacity:.5;cursor:not-allowed;transform:none;}
-
-        /* ── Form controls ── */
-        .form-group{margin-bottom:1rem;}
-        .form-group label{display:block;font-size:0.82rem;font-weight:700;color:#475569;margin-bottom:5px;}
-        .form-control{width:100%;padding:.6rem .9rem;border:1.5px solid var(--border);border-radius:10px;font-size:.9rem;font-family:inherit;outline:none;transition:border-color .2s;background:white;}
-        .form-control:focus{border-color:var(--primary);}
-
-        /* ── Product catalog ── */
-        .products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:1rem;margin-bottom:1.5rem;}
-        .product-card{border:2px solid var(--border);border-radius:14px;overflow:hidden;background:white;transition:all .2s;cursor:default;}
-        .product-card:hover{border-color:var(--primary);box-shadow:0 4px 16px rgba(99,102,241,.12);}
-        .product-card.has-item{border-color:var(--success);background:#f0fdf4;}
-        .prod-img{width:100%;height:120px;object-fit:cover;background:#f8fafc;display:flex;align-items:center;justify-content:center;}
-        .prod-img img{width:100%;height:100%;object-fit:cover;}
-        .prod-img i{font-size:2.8rem;color:#cbd5e1;}
-        .prod-body{padding:.85rem;}
-        .prod-name{font-weight:800;font-size:.9rem;color:var(--text);margin-bottom:3px;}
-        .prod-desc{font-size:.75rem;color:var(--muted);margin-bottom:8px;}
-        .price-chips{display:flex;flex-wrap:wrap;gap:5px;}
-        .pc{background:#f1f5f9;border:1.5px solid var(--border);border-radius:7px;padding:3px 8px;font-size:.74rem;font-weight:600;color:#475569;cursor:pointer;transition:all .15s;}
-        .pc:hover{border-color:var(--primary);color:var(--primary);}
-        .pc.sel{background:var(--primary);color:white;border-color:var(--primary);}
-        .qty-row{display:flex;align-items:center;gap:8px;margin-top:7px;}
-        .qbtn{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--border);background:white;cursor:pointer;font-size:1rem;font-weight:700;display:flex;align-items:center;justify-content:center;transition:all .15s;}
-        .qbtn:hover{border-color:var(--primary);color:var(--primary);}
-        .qval{font-weight:800;min-width:22px;text-align:center;font-size:.95rem;}
-        .rm-btn{margin-left:auto;background:#fee2e2;color:#dc2626;border:none;border-radius:7px;padding:2px 8px;font-size:.75rem;font-weight:700;cursor:pointer;}
-
-        /* ── Cart ── */
-        .cart-box{background:#f8fafc;border:1.5px solid var(--border);border-radius:12px;padding:1rem;margin-bottom:1.2rem;}
-        .cart-row{display:flex;justify-content:space-between;padding:5px 0;font-size:.875rem;border-bottom:1px solid var(--border);}
-        .cart-row:last-of-type{border:none;}
-        .cart-total{display:flex;justify-content:space-between;font-size:1rem;font-weight:900;padding-top:8px;border-top:2px solid var(--border);margin-top:6px;}
-
-        /* ── Order status timeline ── */
-        .timeline{display:flex;justify-content:space-between;align-items:center;position:relative;padding:0 8px;margin:1rem 0;}
-        .timeline::before{content:'';position:absolute;top:14px;left:20px;right:20px;height:2px;background:var(--border);z-index:0;}
-        .tl-step{display:flex;flex-direction:column;align-items:center;gap:5px;z-index:1;}
-        .tl-dot{width:28px;height:28px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;color:#94a3b8;border:2px solid white;transition:all .3s;}
-        .tl-step.done .tl-dot{background:var(--success);color:white;}
-        .tl-step.current .tl-dot{background:var(--primary);color:white;box-shadow:0 0 0 3px rgba(99,102,241,.25);}
-        .tl-lbl{font-size:.68rem;color:var(--muted);font-weight:600;white-space:nowrap;}
-        .tl-step.done .tl-lbl,.tl-step.current .tl-lbl{color:var(--text);font-weight:700;}
-
-        /* ── Order history card ── */
-        .order-row{border:1.5px solid var(--border);border-radius:12px;padding:1rem 1.2rem;margin-bottom:.75rem;background:white;transition:box-shadow .2s;}
-        .order-row:hover{box-shadow:0 4px 12px rgba(0,0,0,.08);}
-        .order-row-top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem;}
-        .order-id{font-weight:800;font-size:1rem;}
-        .order-meta{font-size:.8rem;color:var(--muted);margin-top:3px;}
-
-        /* ── Status badges ── */
-        .badge{display:inline-flex;align-items:center;padding:.2rem .65rem;border-radius:999px;font-size:.74rem;font-weight:700;}
-        .b-green{background:#dcfce7;color:#15803d;}
-        .b-amber{background:#fef3c7;color:#b45309;}
-        .b-blue{background:#dbeafe;color:#1d4ed8;}
-        .b-red{background:#fee2e2;color:#dc2626;}
-        .b-gray{background:#f1f5f9;color:#475569;}
-        .b-purple{background:#ede9fe;color:#6d28d9;}
-
-        /* ── Tabs ── */
-        .tab-row{display:flex;gap:8px;margin-bottom:1.25rem;border-bottom:2px solid var(--border);padding-bottom:0;}
-        .tab-btn{padding:.55rem 1.2rem;font-weight:700;font-size:.875rem;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .18s;}
-        .tab-btn.active{color:var(--primary);border-bottom-color:var(--primary);}
-        .tab-btn:hover{color:var(--primary);}
-
-        /* ── Modal ── */
-        .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;align-items:center;justify-content:center;}
-        .modal-overlay.open{display:flex;}
-        .modal-box{background:white;border-radius:20px;padding:2rem;width:90%;max-width:460px;position:relative;animation:slideUp .25s ease;max-height:90vh;overflow-y:auto;}
-        .modal-title{font-size:1.1rem;font-weight:800;margin-bottom:.25rem;}
-        .modal-sub{font-size:.85rem;color:var(--muted);margin-bottom:1.2rem;}
-        .modal-close{position:absolute;top:1rem;right:1rem;background:#f1f5f9;border:none;border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--muted);font-size:1rem;}
-
-        /* ── Toast ── */
-        #toast-wrap{position:fixed;top:1.5rem;right:1.5rem;z-index:99999;display:flex;flex-direction:column;gap:10px;pointer-events:none;}
-        .toast-item{display:flex;align-items:flex-start;gap:12px;background:white;border-radius:14px;padding:1rem 1.2rem;box-shadow:0 8px 30px rgba(0,0,0,.15);min-width:280px;max-width:380px;pointer-events:all;animation:toastIn .3s ease;border-left:4px solid var(--primary);}
-        .toast-item.success{border-left-color:var(--success);}
-        .toast-item.error{border-left-color:var(--danger);}
-        .toast-item.info{border-left-color:var(--blue);}
-        .toast-icon{font-size:1.3rem;flex-shrink:0;}
-        .toast-body{flex:1;}
-        .toast-ttl{font-weight:800;font-size:.9rem;color:var(--text);}
-        .toast-msg{font-size:.8rem;color:var(--muted);margin-top:2px;}
-        .toast-cls{background:none;border:none;cursor:pointer;color:#94a3b8;font-size:1rem;}
-        @keyframes toastIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
-        @keyframes toastOut{to{opacity:0;transform:translateX(40px)}}
-
-        /* ── QR Code card ── */
-        .qr-card{background:linear-gradient(135deg,#1e293b,#0f172a);border-radius:16px;padding:1.5rem;text-align:center;color:white;}
-        .qr-card h4{font-size:.9rem;font-weight:700;color:#94a3b8;margin-bottom:.5rem;}
-        .qr-card p{font-size:.78rem;color:#64748b;margin-top:.5rem;}
-
-        /* ── Activity feed ── */
-        .activity-item{display:flex;align-items:flex-start;gap:.75rem;padding:.75rem 0;border-bottom:1px solid var(--border);}
-        .activity-item:last-child{border:none;}
-        .act-dot{width:36px;height:36px;border-radius:10px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-        .act-dot i{font-size:1.1rem;color:var(--primary);}
-        .act-text{font-size:.875rem;font-weight:600;}
-        .act-sub{font-size:.78rem;color:var(--muted);}
-
-        /* ── Profile form ── */
-        .profile-header{display:flex;align-items:center;gap:1.25rem;padding:1.5rem;background:linear-gradient(135deg,var(--primary),var(--primary-d));border-radius:14px;margin-bottom:1.5rem;color:white;}
-        .profile-av{width:60px;height:60px;border-radius:16px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:1.8rem;font-weight:900;}
-        .profile-name{font-size:1.1rem;font-weight:800;}
-        .profile-phone{font-size:.85rem;opacity:.8;}
-
-        /* ── Payment due notice ── */
-        .due-card{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border:1.5px solid var(--border);border-left:4px solid var(--danger);border-radius:12px;margin-bottom:.75rem;background:white;}
-        .due-info{font-size:.875rem;font-weight:600;}
-        .due-amount{font-size:1.1rem;font-weight:900;color:var(--danger);}
-
-        @media(max-width:768px){
-            .app-wrap{grid-template-columns:1fr;}
-            .sidebar{display:none;}
-            .main{padding:1rem;}
-        }
-    </style>
+    <link rel="stylesheet" href="../assets/css/style.css">
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -255,18 +47,12 @@ $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
         <div class="sidebar-brand">
             <i class="material-icons-outlined">local_laundry_service</i> DigiWash
         </div>
-        <div class="user-chip">
-            <div class="user-av"><?= strtoupper(substr($userName,0,1)) ?></div>
-            <div>
-                <div class="user-info-name"><?= $userName ?></div>
-                <div class="user-info-phone"><?= $userPhone ?></div>
-            </div>
-        </div>
 
-        <div style="background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(5,150,105,0.1)); border:1.5px dashed rgba(16,185,129,0.3); border-radius:12px; padding:1.2rem; margin-bottom:1rem; text-align:center;">
-            <div style="font-size:0.75rem; color:#10b981; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:5px;">Delivery Verify PIN</div>
-            <div style="font-size:2.2rem; font-weight:900; color:white; letter-spacing:8px; line-height:1; font-family:monospace;"><?= $userDeliveryOtp ?></div>
-            <div style="font-size:0.65rem; color:#94a3b8; font-weight:600; margin-top:8px;">PIN auto-refreshes every 30 mins</div>
+
+        <div class="security-widget">
+            <div class="security-lbl">Delivery Verify PIN</div>
+            <div class="security-val"><?= $userDeliveryOtp ?></div>
+            <div class="security-sub">PIN auto-refreshes every 30 mins</div>
         </div>
 
         <div class="nav-section">Menu</div>
@@ -297,17 +83,15 @@ $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
     <main class="main">
 
         <!-- GLOBAL TOP NAV -->
-        <div style="display:flex; justify-content:flex-end; gap:1rem; margin-bottom:1.5rem; position:relative; z-index:900;">
+        <div class="header-actions">
             <!-- Marketplace Button -->
-            <a href="marketplace.php" style="text-decoration:none;">
-                <div style="background:linear-gradient(135deg,var(--primary),var(--primary-d)); padding:0 1rem; height:46px; border-radius:12px; display:flex; gap:8px; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 4px 12px rgba(99,102,241,0.35); color:white;">
-                    <i class="material-icons-outlined" style="font-size:1.2rem;">storefront</i>
-                    <span style="font-weight:700; font-size:.9rem;">Marketplace</span>
-                </div>
+            <a href="marketplace.php" class="btn-marketplace">
+                <i class="material-icons-outlined">storefront</i>
+                <span>Marketplace</span>
             </a>
             
-            <div class="nav-bell" onclick="document.getElementById('notifDropdown').classList.toggle('open')" style="background:var(--card); width:46px; height:46px; border-radius:12px; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.05); position:relative; border:1px solid var(--border);">
-                <i class="material-icons-outlined" style="font-size:1.5rem; color:var(--text);">notifications</i>
+            <div class="nav-bell hover-lift" id="notifBellBtn">
+                <i class="material-icons-outlined">notifications</i>
                 <span class="nav-badge" id="notifBadge" style="position:absolute; top:-6px; right:-6px; display:none;">0</span>
             </div>
             <!-- Notif Dropdown -->
@@ -342,17 +126,17 @@ $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
             </div>
 
             <div class="stats-row">
-                <div class="stat-box">
+                <div class="stat-box hover-lift">
                     <div class="stat-lbl">Active Orders</div>
                     <div class="stat-val" id="sActive">—</div>
                     <div class="stat-sub">In pipeline</div>
                 </div>
-                <div class="stat-box green">
+                <div class="stat-box green hover-lift">
                     <div class="stat-lbl">Completed</div>
                     <div class="stat-val" id="sCompleted">—</div>
                     <div class="stat-sub">All time</div>
                 </div>
-                <div class="stat-box red">
+                <div class="stat-box red hover-lift">
                     <div class="stat-lbl">Pending Dues</div>
                     <div class="stat-val" id="sDues">₹—</div>
                     <div class="stat-sub">To be paid</div>
@@ -596,6 +380,29 @@ $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
     </div>
 </div>
 
+<div class="mobile-bottom-nav">
+    <a href="javascript:void(0)" class="mobile-nav-item active" id="mob-nav-home" onclick="switchTab('home', document.getElementById('nav-home'))">
+        <i class="material-icons-outlined">dashboard</i>
+        Home
+    </a>
+    <a href="javascript:void(0)" class="mobile-nav-item" id="mob-nav-order" onclick="switchTab('order', document.getElementById('nav-order'))">
+        <i class="material-icons-outlined">add_shopping_cart</i>
+        Order
+    </a>
+    <a href="javascript:void(0)" class="mobile-nav-item" id="mob-nav-history" onclick="switchTab('history', document.getElementById('nav-history'))">
+        <i class="material-icons-outlined">receipt_long</i>
+        History
+    </a>
+    <a href="javascript:void(0)" class="mobile-nav-item" id="mob-nav-payments" onclick="switchTab('payments', document.getElementById('nav-payments'))">
+        <i class="material-icons-outlined">account_balance_wallet</i>
+        Payments
+    </a>
+    <a href="javascript:void(0)" class="mobile-nav-item" id="mob-nav-profile" onclick="switchTab('profile', document.getElementById('nav-profile'))">
+        <i class="material-icons-outlined">manage_accounts</i>
+        Profile
+    </a>
+</div>
+
 <script>
 const csrfToken = "<?= $csrfToken ?>";
 const userPayLaterPlan = "<?= $payLaterPlan ?>";
@@ -606,6 +413,8 @@ let currentOrderTab = 'ongoing';
 let unpaidPayLaterCount = 0;
 let unpaidCodCount = 0;
 let lastOrderData = null;
+
+// ── Core API Helper — defined once at bottom of file ──────────
 
 // ── Toast ──────────────────────────────────────────────────────
 function toast(type, title, msg = '', dur = 4000) {
@@ -625,18 +434,51 @@ function toast(type, title, msg = '', dur = 4000) {
     setTimeout(() => { el.style.animation='toastOut .3s ease forwards'; setTimeout(()=>el.remove(), 300); }, dur);
 }
 
-// ── Tab switching ───────────────────────────────────────────────
-function switchTab(id, el) {
+// ── Tab switching & Hash Routing ──────────────────────────────
+function switchTab(id, el, skipHistory = false) {
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
     document.getElementById(id)?.classList.add('active');
+    
+    // Desktop Nav
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-    el?.classList.add('active');
+    if(el && el.classList.contains('nav-item')) el.classList.add('active');
+    else if(document.getElementById('nav-' + id)) document.getElementById('nav-' + id).classList.add('active');
+
+    // Mobile Nav updates
+    document.querySelectorAll('.mobile-nav-item').forEach(n => n.classList.remove('active'));
+    if (document.getElementById('mob-nav-' + id)) {
+        document.getElementById('mob-nav-' + id).classList.add('active');
+    }
+
+    if (!skipHistory) {
+        window.history.pushState(null, null, '#' + id);
+    }
+
     if (id === 'home')     { fetchStats(); loadActivity(); }
     if (id === 'history')  loadOrders('ongoing');
     if (id === 'payments') loadPayments('remaining');
     if (id === 'order')    loadProductCatalog();
     if (id === 'profile')  renderQR();
 }
+
+window.addEventListener('hashchange', () => {
+    let hash = window.location.hash.substring(1);
+    if (!hash || !document.getElementById(hash)) hash = 'home';
+    switchTab(hash, document.getElementById('nav-' + hash), true);
+});
+
+// ── Dropdown and Modals Toggle ──────────────────────────────────
+document.getElementById('notifBellBtn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.getElementById('notifDropdown').classList.toggle('open');
+});
+window.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('notifDropdown');
+    const bellBtn = document.getElementById('notifBellBtn');
+    if (dropdown && dropdown.classList.contains('open') && e.target !== dropdown && e.target !== bellBtn && !dropdown.contains(e.target)) {
+        dropdown.classList.remove('open');
+    }
+});
 
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 function openModal(id)  { document.getElementById(id).classList.add('open'); }
@@ -979,7 +821,7 @@ async function loadOrders(type, tabEl) {
                         <a href="../api/invoice.php?action=download_order_pdf&order_id=${o.id}" target="_blank" class="btn btn-sm btn-ghost" style="border:1px solid #cbd5e1;"><i class="material-icons-outlined" style="font-size:.9rem;margin-right:4px;">receipt_long</i> Invoice</a>
                         ${statusBadge(o.status)}
                         ${o.status === 'delivered' ? `<button class="btn btn-sm btn-danger" onclick="openReturnModal(${o.id})">↩ Return</button>` : ''}
-                        ${o.status === 'pending' ? `<button class="btn btn-sm btn-outline" style="border-color:var(--danger);color:var(--danger);" onclick="cancelOrder(${o.id})">✕ Cancel</button>` : ''}
+                        ${['pending','assigned'].includes(o.status) ? `<button class="btn btn-sm btn-outline" style="border-color:var(--danger);color:var(--danger);gap:4px;" onclick="cancelOrder(${o.id})"><i class="material-icons-outlined" style="font-size:.9rem;">cancel</i> Cancel Order</button>` : ''}
                     </div>
                 </div>
                 ${timeline}
@@ -1292,9 +1134,10 @@ document.getElementById('logoutBtn')?.addEventListener('click', async () => {
 // ── API helper ────────────────────────────────────────────────
 async function apiCall(url, action, payload = {}) {
     try {
-        const r = await fetch(url,{ method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken}, body:JSON.stringify({action,...payload}) });
-        const d = await r.json(); return d;
-    } catch { return { success:false, message:'Network error.' }; }
+        const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken}, body:JSON.stringify({action,...payload}) });
+        if (!r.ok) return { success:false, message:`Server error (HTTP ${r.status})` };
+        return await r.json();
+    } catch(e) { console.error('apiCall error:', e); return { success:false, message:'Network error. Please check your connection.' }; }
 }
 
 // ── Auto Order ────────────────────────────────────────────────
@@ -1455,6 +1298,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Refresh notifications every 60 seconds
     setInterval(loadNotifications, 60000);
+
+    // Initial load route based on Hash 
+    let initialHash = window.location.hash.substring(1);
+    if (!initialHash || !document.getElementById(initialHash)) initialHash = 'home';
+    switchTab(initialHash, document.getElementById('nav-' + initialHash), true);
 });
 </script>
 </body>
