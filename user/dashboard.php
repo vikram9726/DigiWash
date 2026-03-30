@@ -21,6 +21,17 @@ $otpSalt = "digiwash_delivery_otp_sec";
 $timeWindow = floor(time() / 1800); // 30 minutes
 $hashValue = abs(crc32($_SESSION['user_id'] . $otpSalt . $timeWindow)) % 1000000;
 $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
+// Seconds remaining in current 30-min window (for countdown timer)
+$otpSecsRemaining = 1800 - (time() % 1800);
+// Profile completeness (used for sidebar progress bar)
+$pfFields = [
+    !empty($user['name']),
+    !empty($user['shop_address']),
+    !empty($user['market_id']),
+    !empty($user['lat']),
+    !empty($user['email']),
+];
+$profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -31,12 +42,29 @@ $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
     <meta name="description" content="Manage your laundry orders, payments and profile on DigiWash.">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js" defer></script>
+    <script src="https://checkout.razorpay.com/v1/checkout.js" defer></script>
     <!-- Firebase SDKs for Push Notifications -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-messaging-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-messaging-compat.js" defer></script>
     <link rel="stylesheet" href="../assets/css/style.css">
+    <style>
+        /* Toast Notifications */
+        #toast-wrap { position:fixed; top:20px; right:20px; z-index:99999; display:flex; flex-direction:column; gap:12px; }
+        .toast-item { background:white;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.12);padding:1rem 1.25rem;display:flex;align-items:flex-start;gap:12px;width:320px;max-width:90vw;animation:toastIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);border-left:5px solid var(--primary);position:relative; }
+        .toast-item.success { border-left-color: #10b981; }
+        .toast-item.error { border-left-color: #ef4444; }
+        .toast-item.info { border-left-color: #3b82f6; }
+        .toast-item.warn { border-left-color: #f59e0b; }
+        .toast-icon { font-size:1.4rem; line-height:1; }
+        .toast-body { flex:1; padding-right:15px; }
+        .toast-ttl { font-weight:800;font-size:0.95rem;color:var(--text);margin-bottom:2px; }
+        .toast-msg { font-size:0.8rem;color:var(--muted);font-weight:500;line-height:1.4; }
+        .toast-cls { position:absolute;top:10px;right:10px;background:none;border:none;color:#94a3b8;font-size:1.1rem;cursor:pointer;padding:0;line-height:1; }
+        .toast-cls:hover { color:#475569; }
+        @keyframes toastIn { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+        @keyframes toastOut { from { transform:translateX(0); opacity:1; } to { transform:translateX(100%); opacity:0; } }
+    </style>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -51,8 +79,30 @@ $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
 
         <div class="security-widget">
             <div class="security-lbl">Delivery Verify PIN</div>
-            <div class="security-val"><?= $userDeliveryOtp ?></div>
-            <div class="security-sub">PIN auto-refreshes every 30 mins</div>
+            <div class="security-val" id="pinDisplay"><?= $userDeliveryOtp ?></div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:5px;">
+                <span class="security-sub" style="flex:1;font-size:.68rem;">Refreshes in</span>
+                <span id="pinCountdown" style="font-size:.78rem;font-weight:900;color:#f9a8d4;font-family:'Courier New',monospace;letter-spacing:1px;">--:--</span>
+            </div>
+            <div style="margin-top:7px;height:3px;background:rgba(255,255,255,0.15);border-radius:2px;overflow:hidden;">
+                <div id="pinProgressBar" style="height:100%;background:linear-gradient(90deg,#f9a8d4,#ec4899);border-radius:2px;transition:width 1s linear;width:100%;"></div>
+            </div>
+        </div>
+
+        <!-- Profile Completeness Bar -->
+        <div style="padding:0.9rem 1.5rem 0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+                <span style="font-size:.68rem;font-weight:700;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:.5px;">Profile</span>
+                <span style="font-size:.72rem;font-weight:800;color:<?= $profilePct==100?'#34d399':'#f9a8d4' ?>"><?= $profilePct ?>%</span>
+            </div>
+            <div style="height:5px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;">
+                <div style="height:100%;width:<?= $profilePct ?>%;background:<?= $profilePct==100?'#34d399':'linear-gradient(90deg,#ec4899,#f9a8d4)' ?>;border-radius:3px;transition:width .6s ease;"></div>
+            </div>
+            <?php if($profilePct < 100): ?>
+            <div style="font-size:.66rem;color:rgba(255,255,255,0.35);margin-top:4px;">
+                <a href="javascript:void(0)" onclick="switchTab('profile',document.getElementById('nav-profile'))" style="color:#f9a8d4;text-decoration:none;font-weight:700;">Complete profile →</a>
+            </div>
+            <?php endif; ?>
         </div>
 
         <div class="nav-section">Menu</div>
@@ -165,18 +215,7 @@ $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
             </div>
             <?php else: ?>
 
-            <!-- Subscription Section -->
-            <div class="card" style="margin-bottom:1.25rem; border:1px solid #e0e7ff; background:#f8faff;">
-                <div style="font-weight:800;font-size:1rem;margin-bottom:1rem;display:flex;align-items:center;gap:8px;">
-                    <i class="material-icons-outlined" style="color:var(--primary);">autorenew</i> Weekly Subscriptions
-                </div>
-                <div style="font-size:.85rem;color:var(--muted);margin-bottom:1.25rem;">Set a schedule and we'll automatically create a pickup request for you. Normal limits apply.</div>
-                
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-                    <button class="btn btn-outline subs-btn" id="sub-NONE" onclick="saveAutoOrder('NONE')" style="font-size:.8rem;padding:.6rem .25rem;justify-content:center;">No Auto-pickup</button>
-                    <button class="btn btn-outline subs-btn" id="sub-MONDAYS" onclick="saveAutoOrder('MONDAYS')" style="font-size:.8rem;padding:.6rem .25rem;justify-content:center;">Every Monday</button>
-                </div>
-            </div>
+
 
             <!-- Product grid -->
             <div class="card" style="margin-bottom:1.25rem;">
@@ -232,6 +271,19 @@ $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
                 <button class="btn btn-primary" id="submitOrderBtn" disabled style="width:100%;justify-content:center;padding:.8rem;">
                     <i class="material-icons-outlined" style="font-size:1rem;">local_shipping</i> Request Pickup
                 </button>
+            </div>
+            
+            <!-- Subscription Section -->
+            <div class="card" style="margin-top:1.25rem; margin-bottom:1.25rem; border:1px solid #e0e7ff; background:#f8faff;">
+                <div style="font-weight:800;font-size:1rem;margin-bottom:1rem;display:flex;align-items:center;gap:8px;">
+                    <i class="material-icons-outlined" style="color:var(--primary);">autorenew</i> Weekly Subscriptions
+                </div>
+                <div style="font-size:.85rem;color:var(--muted);margin-bottom:1.25rem;">Set a schedule and we'll automatically create a pickup request for you. Normal limits apply.</div>
+                
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <button class="btn btn-outline subs-btn" id="sub-NONE" onclick="saveAutoOrder('NONE')" style="font-size:.8rem;padding:.6rem .25rem;justify-content:center;">No Auto-pickup</button>
+                    <button class="btn btn-outline subs-btn" id="sub-MONDAYS" onclick="saveAutoOrder('MONDAYS')" style="font-size:.8rem;padding:.6rem .25rem;justify-content:center;">Every Monday</button>
+                </div>
             </div>
             <?php endif; ?>
         </section>
@@ -377,6 +429,20 @@ $userDeliveryOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
 
         <button class="btn btn-primary" style="width:100%; justify-content:center; padding:.85rem; font-size:1rem;" onclick="closeModal('limitModal'); switchTab('payments', document.getElementById('nav-payments'))">Pay Now to Continue</button>
         <button class="btn btn-ghost" style="width:100%; justify-content:center; margin-top:10px;" onclick="closeModal('limitModal')">Dismiss</button>
+    </div>
+</div>
+
+<!-- ── Cancel Order Modal ── -->
+<div class="modal-overlay" id="cancelModal">
+    <div class="modal-box" style="text-align:center; padding: 2.5rem 2rem; max-width:400px;">
+        <i class="material-icons-outlined" style="font-size:3.5rem; color:var(--danger); margin-bottom:1rem;">warning</i>
+        <div class="modal-title" style="font-size:1.3rem;">Cancel Order?</div>
+        <div class="modal-sub" style="font-size:.9rem; margin-top:.5rem;">Are you sure you want to cancel this order? This action cannot be undone.</div>
+        
+        <div style="display:flex;gap:.75rem;margin-top:1.5rem;">
+            <button class="btn btn-danger" style="flex:1;justify-content:center;" onclick="confirmCancelOrder()">Yes, Cancel</button>
+            <button class="btn btn-ghost" style="flex:1;justify-content:center;" onclick="closeModal('cancelModal')">Keep Order</button>
+        </div>
     </div>
 </div>
 
@@ -761,7 +827,10 @@ async function loadOrders(type, tabEl) {
     el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:2rem;">Loading…</p>';
     const d = await apiCall('../api/orders.php','get_orders',{ type });
     if (!d.success || !d.orders?.length) {
-        el.innerHTML = `<div class="card" style="text-align:center;padding:3rem;"><i class="material-icons-outlined" style="font-size:3rem;color:#cbd5e1;">receipt</i><p style="margin-top:1rem;color:var(--muted);">No ${type} orders found.</p></div>`;
+        const ctaLabel = type === 'ongoing'
+            ? `<button class="btn btn-primary" style="margin-top:1.25rem;" onclick="switchTab('order',document.getElementById('nav-order'))"><i class="material-icons-outlined" style="font-size:1rem;">add_shopping_cart</i> Place First Order</button>`
+            : `<button class="btn btn-outline" style="margin-top:1.25rem;" onclick="switchTab('order',document.getElementById('nav-order'))"><i class="material-icons-outlined" style="font-size:1rem;">storefront</i> Start Shopping</button>`;
+        el.innerHTML = `<div class="card" style="text-align:center;padding:3rem;"><i class="material-icons-outlined" style="font-size:3rem;color:#cbd5e1;">receipt</i><p style="margin-top:1rem;color:var(--muted);">No ${type} orders found.</p>${ctaLabel}</div>`;
         return;
     }
     const steps = ['pending','picked_up','in_process','out_for_delivery','delivered'];
@@ -820,8 +889,8 @@ async function loadOrders(type, tabEl) {
                     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                         <a href="../api/invoice.php?action=download_order_pdf&order_id=${o.id}" target="_blank" class="btn btn-sm btn-ghost" style="border:1px solid #cbd5e1;"><i class="material-icons-outlined" style="font-size:.9rem;margin-right:4px;">receipt_long</i> Invoice</a>
                         ${statusBadge(o.status)}
-                        ${o.status === 'delivered' ? `<button class="btn btn-sm btn-danger" onclick="openReturnModal(${o.id})">↩ Return</button>` : ''}
-                        ${['pending','assigned'].includes(o.status) ? `<button class="btn btn-sm btn-outline" style="border-color:var(--danger);color:var(--danger);gap:4px;" onclick="cancelOrder(${o.id})"><i class="material-icons-outlined" style="font-size:.9rem;">cancel</i> Cancel Order</button>` : ''}
+                        ${o.status === 'delivered' ? `<button class="btn btn-sm" style="background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; display:flex; align-items:center; gap:6px; font-weight:700;" onclick="openReturnModal(${o.id})"><i class="material-icons-outlined" style="font-size:1rem;">assignment_return</i> Return Item</button>` : ''}
+                        ${['pending','assigned'].includes(o.status) ? `<button class="btn btn-sm" style="background:#fff1f2; color:#e11d48; border:1px solid #fecdd3; display:flex; align-items:center; gap:6px; font-weight:700; transition:all 0.2s;" onmouseover="this.style.background='#ffe4e6'; this.style.transform='scale(1.02)';" onmouseout="this.style.background='#fff1f2'; this.style.transform='scale(1)';" onclick="cancelOrder(${o.id}, this)"><i class="material-icons-outlined" style="font-size:1rem;">cancel</i> Cancel Order</button>` : ''}
                     </div>
                 </div>
                 ${timeline}
@@ -835,14 +904,42 @@ async function loadOrders(type, tabEl) {
     }).join('');
 }
 
-async function cancelOrder(orderId) {
-    if(!confirm("Are you sure you want to cancel this order?")) return;
+let pendingCancelOrderId = null;
+let pendingCancelBtn = null;
+
+function cancelOrder(orderId, btnElem) {
+    pendingCancelOrderId = orderId;
+    pendingCancelBtn = btnElem;
+    openModal('cancelModal');
+}
+
+async function confirmCancelOrder() {
+    if (!pendingCancelOrderId || !pendingCancelBtn) return;
+    closeModal('cancelModal');
+    
+    const orderId = pendingCancelOrderId;
+    const btnElem = pendingCancelBtn;
+    
+    pendingCancelOrderId = null;
+    pendingCancelBtn = null;
+    
+    const originalText = btnElem.innerHTML;
+    btnElem.innerHTML = '<i class="material-icons-outlined" style="font-size:.9rem; animation: spin 1s linear infinite;">autorenew</i> Cancelling...';
+    btnElem.disabled = true;
+    btnElem.style.opacity = '0.7';
+
     const d = await apiCall('../api/orders.php', 'cancel_order', { order_id: orderId });
-    toast(d.success?'success':'error', 'Order Cancellation', d.message);
+    
     if(d.success) {
+        toast('success', 'Order Cancelled', 'Your order was successfully cancelled.');
         fetchStats();
         loadActivity();
         loadOrders(currentOrderTab);
+    } else {
+        toast('error', 'Cancellation Failed', d.message);
+        btnElem.innerHTML = originalText;
+        btnElem.disabled = false;
+        btnElem.style.opacity = '1';
     }
 }
 
@@ -856,15 +953,24 @@ async function loadPayments(type, tabEl) {
     el.innerHTML = '<p style="color:var(--muted);text-align:center;padding:2rem;">Loading…</p>';
     
     // Concurrently fetch standard checkout orders and admin generated custom invoices
-    const [d, invRes] = await Promise.all([
+    const fetches = [
         apiCall('../api/orders.php','get_payments',{ type }),
         apiCall('../api/invoice.php','get_invoices',{})
-    ]);
+    ];
+    if (type === 'remaining') {
+        fetches.push(apiCall('../api/create_marketplace_order.php', 'get_credit_dues', {}));
+    }
+
+    const results = await Promise.all(fetches);
+    const d = results[0];
+    const invRes = results[1];
+    const mktRes = results[2] || { success: false, dues: [] };
 
     const myPayments = (d.success && d.payments) ? d.payments.filter(p => !p.invoice_id) : [];
     const myInvoices = (invRes.success && invRes.invoices) ? invRes.invoices.filter(i => (type==='remaining'?i.status==='unpaid':i.status==='paid')) : [];
+    const mktDuesArray = (mktRes.success && mktRes.dues) ? mktRes.dues : [];
 
-    if (myPayments.length === 0 && myInvoices.length === 0) {
+    if (myPayments.length === 0 && myInvoices.length === 0 && mktDuesArray.length === 0) {
         el.innerHTML = `<div class="card" style="text-align:center;padding:3rem;"><i class="material-icons-outlined" style="font-size:3rem;color:#cbd5e1;">check_circle</i><p style="margin-top:1rem;color:var(--muted);">No ${type === 'remaining' ? 'pending dues' : 'payment records'} found.</p></div>`;
         return;
     }
@@ -906,22 +1012,63 @@ async function loadPayments(type, tabEl) {
         `;}).join('');
     }
 
+    // 1b. Marketplace Pay Later dues (combined billing)
+    if (type === 'remaining') {
+        if (mktDuesArray.length > 0) {
+            html += `<div style="font-weight:800;font-size:0.9rem;margin-bottom:10px;text-transform:uppercase;color:var(--muted);letter-spacing:1px;margin-top:1.2rem;">🛍️ DigiMarket — Pay Later Dues</div>`;
+            html += `<div style="background:linear-gradient(135deg,#ec4899,#be185d);border-radius:14px;padding:1.4rem;color:white;margin-bottom:1.2rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;box-shadow:0 8px 20px rgba(236,72,153,0.25);">
+                <div>
+                    <div style="font-size:0.8rem;font-weight:700;opacity:0.9;text-transform:uppercase;letter-spacing:1px;">Marketplace Credit Due</div>
+                    <div style="font-size:2rem;font-weight:900;margin-top:4px;">₹${parseFloat(mktRes.total_due).toFixed(2)}</div>
+                    <div style="font-size:0.78rem;margin-top:2px;opacity:0.85;">${mktRes.dues.length} unpaid marketplace order(s)</div>
+                </div>
+                <a href="marketplace.php" style="background:white;color:#be185d;padding:.7rem 1.3rem;border-radius:10px;font-weight:800;font-size:.9rem;text-decoration:none;display:flex;align-items:center;gap:6px;">
+                    <i class="material-icons-outlined" style="font-size:1.1rem;">open_in_new</i> View Orders
+                </a>
+            </div>`;
+            mktDuesArray.forEach(d => {
+                html += `<div class="due-card" style="border-left:4px solid #ec4899;">
+                    <div>
+                        <div class="due-info">Mkt Order #${d.id} ${d.invoice_no ? '· ' + d.invoice_no : ''}</div>
+                        <div style="font-size:.78rem;color:var(--muted);">${new Date(d.created_at).toLocaleDateString('en-IN')} · ${d.status.replace(/_/g,' ').toUpperCase()}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <div class="due-amount" style="color:#be185d;">₹${parseFloat(d.total_amount).toFixed(2)}</div>
+                        ${d.invoice_no ? `<a href="../api/marketplace_invoice.php?order_id=${d.id}" target="_blank" class="btn btn-sm btn-outline" style="padding:2px 8px;border-color:#ec4899;color:#ec4899;"><i class="material-icons-outlined" style="font-size:1.1rem;margin-right:2px;">picture_as_pdf</i>PDF</a>` : ''}
+                    </div>
+                </div>`;
+            });
+        }
+    }
+
     // 2. Main Order Balances
-    if (type === 'remaining' && myPayments.length > 0) {
+    if (type === 'remaining' && (myPayments.length > 0 || mktDuesArray.length > 0)) {
         const plPayments = myPayments.filter(p => p.payment_mode.startsWith('PAY_LATER'));
-        if (plPayments.length > 0) {
-            const hasInTransit = plPayments.some(p => p.order_status !== 'delivered' && p.order_status !== 'cancelled');
-            const payLaterTotal = plPayments.reduce((s, p) => s + parseFloat(p.amount), 0);
+        if (plPayments.length > 0 || mktDuesArray.length > 0) {
+            const washHasInTransit = plPayments.some(p => p.order_status !== 'delivered' && p.order_status !== 'cancelled');
+            const mktHasInTransit = mktDuesArray.some(m => m.status !== 'delivered' && m.status !== 'cancelled');
+            const hasInTransit = washHasInTransit || mktHasInTransit;
+            
+            const washPayLaterTotal = plPayments.reduce((s, p) => s + parseFloat(p.amount), 0);
+            const mktPayLaterTotal = mktDuesArray.reduce((s, m) => s + parseFloat(m.total_amount), 0);
+            const payLaterTotal = washPayLaterTotal + mktPayLaterTotal;
+            const pendingItemsCount = plPayments.length + mktDuesArray.length;
+
             const bulkBtn = hasInTransit
-                ? `<button class="btn" style="background:#e2e8f0; color:#94a3b8; padding:.8rem 1.5rem; font-weight:800; font-size:1rem; cursor:not-allowed;" disabled title="All Pay Later orders must be delivered first">Delivery Pending</button>`
-                : `<button class="btn" style="background:white; color:var(--primary); padding:.8rem 1.5rem; font-weight:800; font-size:1rem;" onclick="initiateBulkPayment()">Pay All Now</button>`;
+                ? `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;">
+                    <button class="btn" style="background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.55);padding:.75rem 1.25rem;font-weight:800;font-size:.9rem;cursor:not-allowed;border:2px dashed rgba(255,255,255,0.25);border-radius:10px;display:flex;align-items:center;gap:7px;" disabled>
+                        🔒 Waiting for Delivery
+                    </button>
+                    <div style="font-size:.68rem;opacity:.65;text-align:center;max-width:160px;line-height:1.3;">Settlement unlocks once all in-transit orders are delivered</div>
+                  </div>`
+                : `<button class="btn" style="background:white;color:var(--primary);padding:.8rem 1.5rem;font-weight:800;font-size:1rem;box-shadow:0 4px 16px rgba(0,0,0,0.15);letter-spacing:.3px;" onclick="initiateBulkPayment()">💳 Pay All Now</button>`;
                 
             html += `
             <div style="background:linear-gradient(135deg,var(--primary),var(--primary-d)); border-radius:14px; padding:1.5rem; color:white; margin-bottom:1.5rem; margin-top:1.5rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; box-shadow:0 8px 20px rgba(99,102,241,0.25);">
                 <div>
-                    <div style="font-size:0.85rem; font-weight:700; opacity:0.9; text-transform:uppercase; letter-spacing:1px;">Pay Later Credit Due</div>
+                    <div style="font-size:0.85rem; font-weight:700; opacity:0.9; text-transform:uppercase; letter-spacing:1px;">Combined Credit Due</div>
                     <div style="font-size:2.2rem; font-weight:900; margin-top:4px;">₹${payLaterTotal.toFixed(2)}</div>
-                    <div style="font-size:0.8rem; margin-top:2px; opacity:0.8;">${plPayments.length} unpaid Pay Later orders in queue</div>
+                    <div style="font-size:0.8rem; margin-top:2px; opacity:0.8;">${pendingItemsCount} unpaid credit orders in queue</div>
                 </div>
                 ${bulkBtn}
             </div>
@@ -952,8 +1099,9 @@ async function loadPayments(type, tabEl) {
                     <div class="due-info">Order #${p.order_id} · ${p.payment_mode.replace(/_/g,' ')}</div>
                     <div style="font-size:.78rem;color:var(--muted);">${new Date(p.created_at).toLocaleDateString('en-IN')}</div>
                 </div>
-                <div style="display:flex;align-items:center;gap:1rem;">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
                     <div class="due-amount">₹${parseFloat(p.amount).toFixed(2)}</div>
+                    <a href="../api/invoice.php?action=download_order_pdf&order_id=${p.order_id}" target="_blank" class="btn btn-sm btn-outline" style="padding:2px 8px;"><i class="material-icons-outlined" style="font-size:1.1rem;margin-right:2px;">picture_as_pdf</i> PDF</a>
                     ${btnHtml}
                 </div>
             </div>
@@ -968,6 +1116,13 @@ async function initiateBulkPayment() {
     try {
         const initRes = await apiCall('../api/payments.php','create_bulk_rzp_order',{});
         if (!initRes.success) { toast('error','Payment Error',initRes.message); return; }
+
+        // Store breakdown for receipt display after payment
+        const laundryAmt   = parseFloat(initRes.laundry_total || 0);
+        const marketAmt    = parseFloat(initRes.market_total  || 0);
+        const laundryCount = parseInt(initRes.laundry_count   || 0);
+        const marketCount  = parseInt(initRes.market_count    || 0);
+
         const opts = {
             key: initRes.key,
             amount: initRes.amount,
@@ -977,8 +1132,18 @@ async function initiateBulkPayment() {
             order_id: initRes.rzp_order_id,
             handler: async (res) => {
                 const vd = await apiCall('../api/payments.php','verify_payment',{ razorpay_payment_id:res.razorpay_payment_id, razorpay_order_id:res.razorpay_order_id, razorpay_signature:res.razorpay_signature, local_order_id:'BULK' });
-                toast(vd.success?'success':'error', vd.success?'Payment Successful':'Verification Failed', vd.message);
-                if (vd.success) { fetchStats(); loadPayments('remaining'); }
+                if (vd.success) {
+                    // Build detailed breakdown message
+                    let parts = [];
+                    if (laundryCount > 0) parts.push(`₹${laundryAmt.toFixed(2)} for ${laundryCount} laundry order${laundryCount>1?'s':''}`);
+                    if (marketCount  > 0) parts.push(`₹${marketAmt.toFixed(2)} for ${marketCount} marketplace order${marketCount>1?'s':''}`);
+                    const receiptMsg = parts.length ? parts.join(' + ') : `₹${(initRes.amount/100).toFixed(2)} paid`;
+                    toast('success', '🎉 All Dues Cleared!', receiptMsg, 7000);
+                    fetchStats();
+                    loadPayments('remaining');
+                } else {
+                    toast('error', 'Verification Failed', vd.message);
+                }
             },
             prefill: { name:'<?= $userName ?>', contact:'<?= $userPhone ?>' },
             theme: { color:'#6366f1' }
@@ -1158,11 +1323,14 @@ async function requestPayLater() {
 // ── FIREBASE CLOUD MESSAGING (Push Notifications) ────────────
 // ══════════════════════════════════════════════════════════════
 const firebaseConfig = <?= getFirebaseConfigJs() ?>;
-firebase.initializeApp(firebaseConfig);
 let messaging = null;
 
 async function initFCM() {
     try {
+        if (firebase.apps.length === 0) {
+            firebase.initializeApp(firebaseConfig);
+        }
+
         // Check browser support
         if (!('Notification' in window) || !('serviceWorker' in navigator)) {
             console.log('FCM: Browser does not support notifications');
@@ -1298,6 +1466,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Refresh notifications every 60 seconds
     setInterval(loadNotifications, 60000);
+
+    // ── PIN Countdown Timer ───────────────────────────────────
+    // Total seconds in a 30-min window; seeded from server-calculated remaining secs
+    const PIN_WINDOW = 1800;
+    let pinSecsLeft = <?= (int)$otpSecsRemaining ?>;
+
+    function updatePinCountdown() {
+        if (pinSecsLeft <= 0) {
+            // Window rolled — reload the page silently to get new PIN
+            location.reload();
+            return;
+        }
+        const m = String(Math.floor(pinSecsLeft / 60)).padStart(2, '0');
+        const s = String(pinSecsLeft % 60).padStart(2, '0');
+        const el = document.getElementById('pinCountdown');
+        const bar = document.getElementById('pinProgressBar');
+        if (el)  el.textContent = `${m}:${s}`;
+        if (bar) bar.style.width = ((pinSecsLeft / PIN_WINDOW) * 100).toFixed(1) + '%';
+        pinSecsLeft--;
+    }
+    updatePinCountdown();
+    setInterval(updatePinCountdown, 1000);
 
     // Initial load route based on Hash 
     let initialHash = window.location.hash.substring(1);

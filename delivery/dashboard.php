@@ -16,7 +16,7 @@ $isOnline = (int)$stmt->fetchColumn() === 1;
     <title>DigiWash - Delivery Hub</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/style.css">
-    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript" defer></script>
     <style>
         :root { --sidebar-w: 230px; }
         body { background: #f1f5f9; }
@@ -40,8 +40,8 @@ $isOnline = (int)$stmt->fetchColumn() === 1;
         /* ── Main ── */
         .main { padding: 2rem; }
         .section-content { display: none; }
-        .section-content.active { display: block; animation: fadeUp 0.3s ease; }
-        @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        .section-content.active { display: block; animation: fadeUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; will-change: transform, opacity; backface-visibility: hidden; }
+        @keyframes fadeUp { from{opacity:0;transform:translate3d(0,8px,0)} to{opacity:1;transform:translate3d(0,0,0)} }
         .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
         .page-title { font-size: 1.5rem; font-weight: 800; color: #0f172a; }
 
@@ -55,8 +55,8 @@ $isOnline = (int)$stmt->fetchColumn() === 1;
         .stat-chip.blue .num { color: #2563eb; }
 
         /* ── Order card ── */
-        .order-card { background: white; border-radius: 16px; padding: 1.4rem; margin-bottom: 1rem; border-left: 5px solid #10b981; box-shadow: 0 2px 8px rgba(0,0,0,0.06); transition: transform 0.15s, box-shadow 0.15s; }
-        .order-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
+        .order-card { background: white; border-radius: 16px; padding: 1.4rem; margin-bottom: 1rem; border-left: 5px solid #10b981; box-shadow: 0 2px 8px rgba(0,0,0,0.06); transition: transform 0.2s cubic-bezier(0.16,1,0.3,1), box-shadow 0.2s ease; will-change: transform; backface-visibility: hidden; }
+        .order-card:hover { transform: translate3d(0, -2px, 0); box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
         .order-card.pickup { border-left-color: #6366f1; }
         .order-card.in-process { border-left-color: #f59e0b; }
         .order-card.delivery { border-left-color: #10b981; }
@@ -72,7 +72,7 @@ $isOnline = (int)$stmt->fetchColumn() === 1;
 
         /* ── Buttons ── */
         .btn-action { display: inline-flex; align-items: center; gap: 6px; padding: 0.5rem 1rem; border-radius: 10px; border: none; font-weight: 700; font-size: 0.85rem; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
-        .btn-action:hover { filter: brightness(0.9); transform: translateY(-1px); }
+        .btn-action:hover { filter: brightness(0.9); transform: translate3d(0, -1px, 0); }
         .btn-pickup  { background: #ede9fe; color: #6d28d9; }
         .btn-qr      { background: #dbeafe; color: #1d4ed8; }
         .btn-otp     { background: #dcfce7; color: #15803d; }
@@ -95,9 +95,9 @@ $isOnline = (int)$stmt->fetchColumn() === 1;
         .empty-state p { font-size: 1rem; font-weight: 600; }
 
         /* ── Modal ── */
-        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
         .modal-overlay.open { display: flex; }
-        .modal-box { background: white; border-radius: 20px; padding: 2rem; width: 90%; max-width: 420px; position: relative; animation: fadeUp 0.25s ease; }
+        .modal-box { background: white; border-radius: 20px; padding: 2rem; width: 90%; max-width: 420px; position: relative; animation: fadeUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); will-change: transform, opacity; backface-visibility: hidden; }
         .modal-title { font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 0.5rem; }
         .modal-sub { font-size: 0.85rem; color: #64748b; margin-bottom: 1.2rem; }
         .modal-close { position: absolute; top: 1rem; right: 1rem; background: #f1f5f9; border: none; border-radius: 8px; width: 30px; height: 30px; cursor: pointer; color: #64748b; font-size: 1rem; }
@@ -158,10 +158,7 @@ $isOnline = (int)$stmt->fetchColumn() === 1;
         <div class="menu-item" id="nav-returns" onclick="switchTab('returns',this)">
             <i class="material-icons-outlined">assignment_return</i> Return Pickups
         </div>
-        <div class="menu-item" id="nav-marketplace" onclick="switchTab('marketplace',this)">
-            <i class="material-icons-outlined">storefront</i> Marketplace Orders
-            <span class="menu-badge" id="badgeMarketplace" style="display:none">0</span>
-        </div>
+
 
         <div style="margin-top:auto; padding-top:1.5rem;">
             <div class="menu-item" id="logoutBtn" style="color:#ef4444;">
@@ -229,15 +226,7 @@ $isOnline = (int)$stmt->fetchColumn() === 1;
             <div id="returnsContainer"><div class="empty-state"><i class="material-icons-outlined">hourglass_empty</i><p>Loading…</p></div></div>
         </section>
 
-        <!-- ══ MARKETPLACE ══ -->
-        <section id="marketplace" class="section-content">
-            <div class="page-header">
-                <div class="page-title">🛍️ Marketplace Orders</div>
-                <button class="btn-action btn-ghost" onclick="loadMarketplace()">↻ Refresh</button>
-            </div>
-            <p style="color:#64748b; font-size:0.85rem; margin-bottom:1.5rem;">Update the status of your assigned marketplace deliveries.</p>
-            <div id="marketplaceContainer"><div class="empty-state"><i class="material-icons-outlined">hourglass_empty</i><p>Loading…</p></div></div>
-        </section>
+
 
     </main>
 </div>
@@ -314,6 +303,19 @@ $isOnline = (int)$stmt->fetchColumn() === 1;
     </div>
 </div>
 
+<!-- Custom Confirm Modal -->
+<div class="modal-overlay" id="confirmModal" style="z-index: 10000;">
+    <div class="modal-box" style="text-align:center;">
+        <i class="material-icons-outlined" style="font-size:3.5rem; color:#f59e0b; margin-bottom:1rem;" id="confirmIcon">warning</i>
+        <div class="modal-title" id="confirmTitle" style="font-size:1.4rem;">Confirm Action</div>
+        <div class="modal-sub" id="confirmSub" style="font-size:1rem;color:#64748b;">Are you sure?</div>
+        <div class="modal-actions" style="margin-top:1.5rem; justify-content:center; gap:10px;">
+            <button class="btn-action btn-primary" style="flex:1;justify-content:center;font-size:1rem;padding:0.7rem;" id="btnConfirmYes">Yes, Proceed</button>
+            <button class="btn-action btn-ghost" style="flex:1;justify-content:center;font-size:1rem;" onclick="closeModal('confirmModal')">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <script>
 const csrf  = "<?= $_SESSION['csrf_token'] ?? '' ?>";
 const dApi  = '../api/delivery.php';
@@ -366,6 +368,34 @@ function setBadge(id, count) {
     el.style.display = count > 0 ? 'inline' : 'none';
 }
 
+// ── Globals ──
+let currentSysMode = { pickups: 'wash', inprocess: 'wash', deliveries: 'wash', completed: 'wash', returns: 'wash' };
+
+function customConfirm(title, msg, onYes, onNo = null) {
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmSub').textContent = msg;
+    const btnTrue = document.getElementById('btnConfirmYes');
+    btnTrue.onclick = () => { closeModal('confirmModal'); onYes(); };
+    openModal('confirmModal');
+}
+
+function setSysMode(type, mode) {
+    currentSysMode[type] = mode;
+    loadSection(type);
+}
+
+function renderSysTabs(type) {
+    if (!['pickups', 'deliveries', 'completed'].includes(type)) return '';
+    const washAct = currentSysMode[type] === 'wash' ? 'background:#10b981;color:white;box-shadow:0 4px 10px rgba(16,185,129,.3);' : 'background:transparent;color:#64748b;font-weight:600;';
+    const mktAct = currentSysMode[type] === 'market' ? 'background:#10b981;color:white;box-shadow:0 4px 10px rgba(16,185,129,.3);' : 'background:transparent;color:#64748b;font-weight:600;';
+    return `
+        <div style="background:#e2e8f0; padding:6px; border-radius:12px; display:flex; gap:6px; margin-bottom:1.5rem;">
+            <button style="flex:1; border:none; padding:10px; border-radius:10px; font-weight:700; font-size:.9rem; cursor:pointer; transition:.2s; ${washAct}" onclick="setSysMode('${type}','wash')">🧺 Laundry (DigiWash)</button>
+            <button style="flex:1; border:none; padding:10px; border-radius:10px; font-weight:700; font-size:.9rem; cursor:pointer; transition:.2s; ${mktAct}" onclick="setSysMode('${type}','market')">🛍️ Marketplace (DigiMarket)</button>
+        </div>
+    `;
+}
+
 // ── Load Section ──
 async function loadSection(type) {
     // Map tab id → API type
@@ -373,21 +403,32 @@ async function loadSection(type) {
     const containerId = type + 'Container';
     const container = document.getElementById(containerId);
     if (!container) return;
-    container.innerHTML = '<div class="empty-state"><i class="material-icons-outlined">hourglass_empty</i><p>Loading…</p></div>';
+    
+    container.innerHTML = (['pickups','deliveries','completed'].includes(type) ? renderSysTabs(type) : '') + '<div class="empty-state"><i class="material-icons-outlined">hourglass_empty</i><p>Loading…</p></div>';
+
+    if (currentSysMode[type] === 'market' && ['pickups','deliveries','completed'].includes(type)) {
+        await loadMarketDataForSection(type, container);
+        return;
+    }
+
     const d = await api('get_assignments', { type: apiType });
-    if (!d.success) { container.innerHTML = '<div class="empty-state"><i class="material-icons-outlined">error_outline</i><p>' + d.message + '</p></div>'; return; }
+    
+    // Maintain tabs inside innerHTML replacement
+    const tabsHtml = ['pickups','deliveries','completed'].includes(type) ? renderSysTabs(type) : '';
+
+    if (!d.success) { container.innerHTML = tabsHtml + '<div class="empty-state"><i class="material-icons-outlined">error_outline</i><p>' + d.message + '</p></div>'; return; }
     if (!d.assignments || !d.assignments.length) {
         const emptyMsgs = {
-            pickups:   'No pending pickups. Great — all collected!',
+            pickups:   'No pending laundry pickups. Great — all collected!',
             inprocess: 'No orders in processing right now.',
-            deliveries:'No orders out for delivery.',
+            deliveries:'No laundry out for delivery.',
             completed: 'No completed deliveries yet.',
             returns:   'No approved return pickups assigned to you.',
         };
-        container.innerHTML = `<div class="empty-state"><i class="material-icons-outlined">inbox</i><p>${emptyMsgs[type]||'Nothing here.'}</p></div>`;
+        container.innerHTML = tabsHtml + `<div class="empty-state"><i class="material-icons-outlined">inbox</i><p>${emptyMsgs[type]||'Nothing here.'}</p></div>`;
         return;
     }
-    container.innerHTML = d.assignments.map(o => renderCard(o, type)).join('');
+    container.innerHTML = tabsHtml + d.assignments.map(o => renderCard(o, type)).join('');
 }
 
 // ── Render order card ──
@@ -460,37 +501,40 @@ function renderCard(o, type) {
 // ── Actions ──
 async function toggleOnline(val) {
     const d = await api('toggle_online', { is_online: val });
-    if (!d.success) { alert(d.message); document.getElementById('onlineToggle').checked = !val; }
+    if (!d.success) { showToast('❌ ' + d.message, 'error'); document.getElementById('onlineToggle').checked = !val; }
+    else { showToast('✅ Status updated', 'success'); }
 }
 
 async function acceptOrder(orderId) {
     const d = await api('accept_order', { order_id: orderId });
     if (d.success) { loadSection('pickups'); loadStats(); }
-    else alert(d.message);
+    else showToast('❌ ' + d.message, 'error');
 }
 
 async function fulfillPickup(orderId) {
-    if (!confirm('Confirm you have physically collected the items?')) return;
-    const d = await api('fulfill_pickup', { order_id: orderId });
-    if (d.success) { 
-        showToast('✅ Pickup confirmed! Order sent to processing.', 'success');
-        loadSection('pickups'); 
-        loadStats(); 
-    } else {
-        showToast('❌ ' + d.message, 'error');
-    }
+    customConfirm('Mark Picked Up', 'Confirm you have physically collected the items for Order #' + orderId + '?', async () => {
+        const d = await api('fulfill_pickup', { order_id: orderId });
+        if (d.success) { 
+            showToast('✅ Pickup confirmed! Order sent to processing.', 'success');
+            loadSection('pickups'); 
+            loadStats(); 
+        } else {
+            showToast('❌ ' + d.message, 'error');
+        }
+    });
 }
 
 async function cancelPickup(orderId) {
-    if (!confirm(`Release Order #${orderId} back to the pool? You will be unassigned from this order.`)) return;
-    const d = await api('cancel_pickup', { order_id: orderId });
-    if (d.success) {
-        showToast('↩️ Order released back to pool.', 'info');
-        loadSection('pickups');
-        loadStats();
-    } else {
-        showToast('❌ ' + d.message, 'error');
-    }
+    customConfirm('Release Order', `Release Order #${orderId} back to the pool? You will be unassigned from this order.`, async () => {
+        const d = await api('cancel_pickup', { order_id: orderId });
+        if (d.success) {
+            showToast('↩️ Order released back to pool.', 'info');
+            loadSection('pickups');
+            loadStats();
+        } else {
+            showToast('❌ ' + d.message, 'error');
+        }
+    });
 }
 
 // ── Inline Toast for Delivery Dashboard ──
@@ -523,28 +567,59 @@ async function submitReady() {
         const msg = document.getElementById('readyMsg');
         msg.textContent = d.message; msg.style.color = d.success ? '#10b981' : '#ef4444'; msg.style.display = 'block';
         if (d.success) setTimeout(()=>{ closeModal('readyModal'); loadSection('inprocess'); loadSection('deliveries'); loadStats(); }, 1200);
-    } catch(e) { alert('Server error'); }
+    } catch(e) { showToast('❌ Server error', 'error'); }
     btn.textContent = '✓ Mark Ready'; btn.disabled = false;
 }
 
 
 
-function openOTPModal(orderId) {
+function openOTPModal(orderId, isMarket = false) {
     document.getElementById('otpOrderId').value = orderId;
     document.getElementById('otpInput').value = '';
     document.getElementById('otpMsg').style.display = 'none';
+    
+    let mktInput = document.getElementById('otpIsMarket');
+    if (!mktInput) {
+        mktInput = document.createElement('input');
+        mktInput.type = 'hidden';
+        mktInput.id = 'otpIsMarket';
+        document.getElementById('otpModal').appendChild(mktInput);
+    }
+    mktInput.value = isMarket ? 'true' : 'false';
+    
     openModal('otpModal');
 }
+
 async function submitOTP() {
     const orderId = document.getElementById('otpOrderId').value;
     const otp = document.getElementById('otpInput').value;
+    const isMarketInput = document.getElementById('otpIsMarket');
+    const isMarket = isMarketInput ? isMarketInput.value === 'true' : false;
+    
     const btn = document.getElementById('btnSubmitOtp');
     const msg = document.getElementById('otpMsg');
+    
     if (!otp) { msg.textContent = 'Please enter the PIN.'; msg.style.color = '#ef4444'; msg.style.display = 'block'; return; }
+    
     btn.textContent = 'Verifying…'; btn.disabled = true; msg.style.display = 'none';
-    const d = await api('complete_delivery_otp', { order_id: orderId, otp });
-    msg.textContent = d.message; msg.style.color = d.success ? '#10b981' : '#ef4444'; msg.style.display = 'block';
-    if (d.success) setTimeout(()=>{ closeModal('otpModal'); loadSection('deliveries'); loadSection('completed'); loadStats(); }, 1200);
+    
+    if (isMarket) {
+        try {
+            const r = await fetch('../api/update_marketplace_status.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+                body: JSON.stringify({ action:'update_status', order_id: orderId, status: 'delivered', otp })
+            });
+            const d = await r.json();
+            msg.textContent = d.message; msg.style.color = d.success ? '#10b981' : '#ef4444'; msg.style.display = 'block';
+            if (d.success) setTimeout(()=>{ closeModal('otpModal'); loadSection('deliveries'); loadSection('completed'); loadStats(); }, 1200);
+        } catch(e) { msg.textContent = 'Server Error'; msg.style.display = 'block'; }
+    } else {
+        const d = await api('complete_delivery_otp', { order_id: orderId, otp });
+        msg.textContent = d.message; msg.style.color = d.success ? '#10b981' : '#ef4444'; msg.style.display = 'block';
+        if (d.success) setTimeout(()=>{ closeModal('otpModal'); loadSection('deliveries'); loadSection('completed'); loadStats(); }, 1200);
+    }
+    
     btn.textContent = '✓ Verify & Complete'; btn.disabled = false;
 }
 
@@ -632,13 +707,10 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 document.addEventListener('DOMContentLoaded', () => {
     loadStats();
     loadSection('pickups');
-    loadMarketplace();
 });
 
-async function loadMarketplace() {
-    const container = document.getElementById('marketplaceContainer');
-    if (!container) return;
-    container.innerHTML = '<div class="empty-state"><i class="material-icons-outlined">hourglass_empty</i><p>Loading…</p></div>';
+async function loadMarketDataForSection(sectionType, container) {
+    const tabsHtml = renderSysTabs(sectionType);
     try {
         const r = await fetch('../api/marketplace_orders.php', {
             method: 'POST',
@@ -646,17 +718,24 @@ async function loadMarketplace() {
             body: JSON.stringify({ action: 'get_orders', csrf_token: csrf })
         });
         const d = await r.json();
-        if (!d.success) { container.innerHTML = '<div class="empty-state"><p>' + d.message + '</p></div>'; return; }
+        if (!d.success) { container.innerHTML = tabsHtml + '<div class="empty-state"><p>' + d.message + '</p></div>'; return; }
         
-        const activeOrders = d.orders.filter(o => !['delivered', 'cancelled'].includes(o.status));
-        setBadge('badgeMarketplace', activeOrders.length);
+        // Filter orders by section type
+        let filteredOrders = [];
+        if (sectionType === 'pickups') {
+            filteredOrders = d.orders.filter(o => o.status === 'assigned');
+        } else if (sectionType === 'deliveries') {
+            filteredOrders = d.orders.filter(o => o.status === 'picked_up' || o.status === 'out_for_delivery');
+        } else if (sectionType === 'completed') {
+            filteredOrders = d.orders.filter(o => o.status === 'delivered');
+        }
 
-        if (!d.orders || !d.orders.length) {
-            container.innerHTML = `<div class="empty-state"><i class="material-icons-outlined">inbox</i><p>No marketplace orders assigned.</p></div>`;
+        if (filteredOrders.length === 0) {
+            container.innerHTML = tabsHtml + `<div class="empty-state"><i class="material-icons-outlined">inbox</i><p>No marketplace orders here.</p></div>`;
             return;
         }
 
-        container.innerHTML = d.orders.map(o => {
+        container.innerHTML = tabsHtml + filteredOrders.map(o => {
             const items = o.items.map(i => `${i.quantity}x ${i.name}`).join(', ');
             const statusMap = {
                 'assigned': { lbl: 'Assigned', btn: 'Mark Picked Up', next: 'picked_up', icon: 'shopping_bag', color: 'b-blue' },
@@ -671,19 +750,29 @@ async function loadMarketplace() {
 
             if (statusMap[o.status]) {
                 const conf = statusMap[o.status];
-                actions = `<button class="btn-action btn-primary" onclick="updateMktStatus(${o.id}, '${conf.next}')"><i class="material-icons-outlined" style="font-size:16px">${conf.icon}</i> ${conf.btn}</button>`;
+                if (conf.next === 'delivered') {
+                    actions = `<button class="btn-action btn-primary" style="background:#f59e0b; border-color:#d97706;" onclick="openOTPModal(${o.id}, true)"><i class="material-icons-outlined" style="font-size:16px">verified_user</i> Verify PIN to Deliver</button>`;
+                } else {
+                    actions = `<button class="btn-action btn-primary" onclick="updateMktStatus(${o.id}, '${conf.next}')"><i class="material-icons-outlined" style="font-size:16px">${conf.icon}</i> ${conf.btn}</button>`;
+                }
             }
 
             const isDone = o.status === 'delivered' || o.status === 'cancelled';
             const btnCall = o.user_phone ? `<a href="tel:${o.user_phone}" style="background:#e0e7ff; color:#4f46e5; text-decoration:none; padding:4px 8px; border-radius:6px; font-weight:600; font-size:0.75rem; display:inline-flex; align-items:center; gap:4px;"><i class="material-icons-outlined" style="font-size:14px">phone</i> Call</a>` : '';
+            
+            const timeInfo = [];
+            timeInfo.push(`<p><i class="material-icons-outlined">calendar_today</i> Placed: ${new Date(o.created_at).toLocaleDateString()}</p>`);
+            if (o.picked_up_at) timeInfo.push(`<p><i class="material-icons-outlined">shopping_bag</i> Picked Up: ${new Date(o.picked_up_at).toLocaleString('en-US',{hour:'numeric',minute:'numeric',day:'numeric',month:'short'})}</p>`);
+            if (o.delivered_at) timeInfo.push(`<p><i class="material-icons-outlined">check_circle</i> Delivered: ${new Date(o.delivered_at).toLocaleString('en-US',{hour:'numeric',minute:'numeric',day:'numeric',month:'short'})}</p>`);
+
             return `
                 <div class="order-card ${isDone ? 'done' : 'pickup'}">
                     <div class="card-row">
                         <div class="card-info">
                             <h4>Mkt Order #${o.id} — ${o.user_name}</h4>
                             <p style="color:#0f172a;font-weight:600;margin-bottom:6px;">Items: ${items}</p>
-                            <p><i class="material-icons-outlined">payments</i> <strong>₹${o.total_amount}</strong> (${o.payment_type.toUpperCase()})</p>
-                            <p><i class="material-icons-outlined">calendar_today</i> ${new Date(o.created_at).toLocaleDateString()}</p>
+                            <p><i class="material-icons-outlined">payments</i> <strong>₹${parseFloat(o.total_amount).toFixed(2)}</strong> (${o.payment_type.toUpperCase()})</p>
+                            ${timeInfo.join('')}
                         </div>
                         <div class="card-actions">
                             ${sBadge}
@@ -695,21 +784,27 @@ async function loadMarketplace() {
             `;
         }).join('');
 
-    } catch(e) { container.innerHTML = '<div class="empty-state"><p>Error connecting</p></div>'; }
+    } catch(e) { container.innerHTML = tabsHtml + '<div class="empty-state"><p>Error connecting</p></div>'; }
 }
 
 async function updateMktStatus(id, newStatus) {
-    if (!confirm('Update marketplace order status?')) return;
-    try {
-        const r = await fetch('../api/update_marketplace_status.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'update_status', order_id: id, status: newStatus, csrf_token: csrf })
-        });
-        const d = await r.json();
-        alert(d.message);
-        if (d.success) loadMarketplace();
-    } catch(e) { alert('Error updating'); }
+    customConfirm('Update Mkt Status', 'Update marketplace order status to ' + newStatus.replace(/_/g, ' ') + '?', async () => {
+        try {
+            const r = await fetch('../api/update_marketplace_status.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'update_status', order_id: id, status: newStatus, csrf_token: csrf })
+            });
+            const d = await r.json();
+            if (d.success) {
+                showToast('✅ ' + d.message, 'success');
+                const activeTab = document.querySelector('.menu-item.active');
+                if(activeTab) loadSection(activeTab.id.replace('nav-',''));
+            } else {
+                showToast('❌ ' + d.message, 'error');
+            }
+        } catch(e) { showToast('❌ Error updating order', 'error'); }
+    });
 }
 </script>
 </body>

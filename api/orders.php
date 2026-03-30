@@ -28,57 +28,65 @@ if (!hash_equals($_SESSION['csrf_token'], $csrfToken)) {
 
 // --- GET DASHBOARD STATS ---
 if ($action === 'get_dashboard_stats') {
-    // Active orders
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE user_id = ? AND status IN ('pending', 'picked_up', 'in_process', 'out_for_delivery')");
-    $stmt->execute([$userId]);
-    $activeOrders = $stmt->fetchColumn();
+    try {
+        // Active orders
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE user_id = ? AND status IN ('pending', 'assigned', 'picked_up', 'in_process', 'out_for_delivery')");
+        $stmt->execute([$userId]);
+        $activeOrders = $stmt->fetchColumn();
 
-    // Completed orders
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE user_id = ? AND status = 'delivered'");
-    $stmt->execute([$userId]);
-    $completedOrders = $stmt->fetchColumn();
+        // Completed orders
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE user_id = ? AND status = 'delivered'");
+        $stmt->execute([$userId]);
+        $completedOrders = $stmt->fetchColumn();
 
-    // Pending payment general sum
-    $stmt = $pdo->prepare("SELECT SUM(amount) FROM payments WHERE user_id = ? AND status = 'remaining'");
-    $stmt->execute([$userId]);
-    $pendingPayment = $stmt->fetchColumn() ?: 0.00;
+        // Pending payment general sum
+        $stmt = $pdo->prepare("SELECT SUM(amount) FROM payments WHERE user_id = ? AND status = 'remaining'");
+        $stmt->execute([$userId]);
+        $pendingPayment = $stmt->fetchColumn() ?: 0.00;
 
-    // Unpaid Pay Later count
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE user_id = ? AND status = 'remaining' AND payment_mode LIKE 'PAY_LATER%'");
-    $stmt->execute([$userId]);
-    $unpaidPayLater = $stmt->fetchColumn() ?: 0;
+        // Unpaid Pay Later count
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE user_id = ? AND status = 'remaining' AND payment_mode LIKE 'PAY_LATER%'");
+        $stmt->execute([$userId]);
+        $unpaidPayLater = $stmt->fetchColumn() ?: 0;
 
-    // Unpaid COD count
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE user_id = ? AND status = 'remaining' AND payment_mode = 'COD'");
-    $stmt->execute([$userId]);
-    $unpaidCod = $stmt->fetchColumn() ?: 0;
+        // Unpaid COD count
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE user_id = ? AND status = 'remaining' AND payment_mode = 'COD'");
+        $stmt->execute([$userId]);
+        $unpaidCod = $stmt->fetchColumn() ?: 0;
 
-    // Auto Order Frequency
-    $stmt = $pdo->prepare("SELECT auto_order_frequency FROM users WHERE id = ?");
-    $stmt->execute([$userId]);
-    $autoFreq = $stmt->fetchColumn() ?: 'NONE';
+        // Auto Order Frequency
+        $autoFreq = 'NONE';
+        try {
+            $stmt = $pdo->prepare("SELECT auto_order_frequency FROM users WHERE id = ?");
+            $stmt->execute([$userId]);
+            $autoFreq = $stmt->fetchColumn() ?: 'NONE';
+        } catch (\Exception $e) {}
 
-    // Recent Order (For Quick Reorder)
-    $recentStmt = $pdo->prepare("SELECT id, total_amount FROM orders WHERE user_id = ? AND status != 'cancelled' ORDER BY created_at DESC LIMIT 1");
-    $recentStmt->execute([$userId]);
-    $recentOrder = $recentStmt->fetch(PDO::FETCH_ASSOC);
-    if ($recentOrder) {
-        $itStmt = $pdo->prepare("SELECT product_price_id, product_name, size_label, price, quantity FROM order_items WHERE order_id = ?");
-        $itStmt->execute([$recentOrder['id']]);
-        $recentOrder['items'] = $itStmt->fetchAll(PDO::FETCH_ASSOC);
-    } else {
+        // Recent Order (For Quick Reorder)
         $recentOrder = null;
-    }
+        try {
+            $recentStmt = $pdo->prepare("SELECT id, total_amount FROM orders WHERE user_id = ? AND status != 'cancelled' ORDER BY created_at DESC LIMIT 1");
+            $recentStmt->execute([$userId]);
+            $recentOrder = $recentStmt->fetch(PDO::FETCH_ASSOC);
+            if ($recentOrder) {
+                $itStmt = $pdo->prepare("SELECT product_price_id, product_name, size_label, price, quantity FROM order_items WHERE order_id = ?");
+                $itStmt->execute([$recentOrder['id']]);
+                $recentOrder['items'] = $itStmt->fetchAll(PDO::FETCH_ASSOC);
+            }
+        } catch (\Exception $e) {}
 
-    respond(true, 'Stats fetched', [
-        'active_orders'    => $activeOrders,
-        'completed_orders' => $completedOrders,
-        'pending_payment'  => $pendingPayment,
-        'unpaid_pay_later' => $unpaidPayLater,
-        'unpaid_cod'       => $unpaidCod,
-        'auto_order_freq'  => $autoFreq,
-        'recent_order'     => $recentOrder
-    ]);
+        respond(true, 'Stats fetched', [
+            'active_orders'    => $activeOrders,
+            'completed_orders' => $completedOrders,
+            'pending_payment'  => $pendingPayment,
+            'unpaid_pay_later' => $unpaidPayLater,
+            'unpaid_cod'       => $unpaidCod,
+            'auto_order_freq'  => $autoFreq,
+            'recent_order'     => $recentOrder
+        ]);
+    } catch (\Exception $e) {
+        respond(false, 'Stats error: ' . $e->getMessage());
+    }
 }
 
 // --- CREATE ORDER ---
@@ -175,7 +183,8 @@ if ($action === 'create_order') {
         $couponCode     = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $data['coupon_code'] ?? ''));
 
         if (!empty($couponCode)) {
-            $stmt = $pdo->prepare("SELECT * FROM coupons WHERE code = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > NOW()) AND min_order_amount <= ?");
+            // ISSUE-007 FIX: Lock the coupon row to prevent concurrent overdraft usage
+            $stmt = $pdo->prepare("SELECT * FROM coupons WHERE code = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > NOW()) AND min_order_amount <= ? FOR UPDATE");
             $stmt->execute([$couponCode, $baseAmount]);
             $coupon = $stmt->fetch();
             if ($coupon) {
@@ -369,7 +378,7 @@ if ($action === 'cancel_order') {
     try {
         $pdo->beginTransaction();
 
-        $pdo->prepare("UPDATE orders SET status = 'cancelled', delivery_id = NULL, updated_at = NOW() WHERE id = ?")->execute([$orderId]);
+        $pdo->prepare("UPDATE orders SET status = 'cancelled', delivery_id = NULL WHERE id = ?")->execute([$orderId]);
 
         // If a delivery partner was assigned, release their load counter
         if ($order['delivery_id']) {
@@ -377,10 +386,10 @@ if ($action === 'cancel_order') {
         }
 
         // Remove active payment dues to prevent blocking new orders
-        $pdo->prepare("DELETE FROM payments WHERE order_id = ? AND status = 'remaining'")->execute([$orderId]);
+        try { $pdo->prepare("DELETE FROM payments WHERE order_id = ? AND status = 'remaining'")->execute([$orderId]); } catch (\Exception $e) {}
 
         // Release coupon usage
-        $pdo->prepare("DELETE FROM coupon_usages WHERE order_id = ?")->execute([$orderId]);
+        try { $pdo->prepare("DELETE FROM coupon_usages WHERE order_id = ?")->execute([$orderId]); } catch (\Exception $e) {}
 
         $pdo->commit();
         respond(true, 'Your order has been successfully cancelled.');

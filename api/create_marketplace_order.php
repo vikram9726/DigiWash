@@ -7,190 +7,209 @@ function respond($success, $message, $data = []) {
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    respond(false, 'Invalid request method.');
-}
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') respond(false, 'Invalid request method.');
+if (!isset($_SESSION['user_id'])) respond(false, 'Unauthorized. Please log in.');
 
-if (!isset($_SESSION['user_id'])) {
-    respond(false, 'Unauthorized. Please log in.');
-}
-
-$data = json_decode(file_get_contents('php://input'), true);
-$action = $data['action'] ?? $_POST['action'] ?? '';
+$body   = json_decode(file_get_contents('php://input'), true) ?? [];
+$action = $body['action'] ?? '';
 $userId = (int)$_SESSION['user_id'];
 
-$headers = getallheaders();
-$csrfToken = $headers['X-CSRF-Token'] ?? $data['csrf_token'] ?? $_POST['csrf_token'] ?? '';
+$headers    = getallheaders();
+$csrfToken  = $headers['X-CSRF-Token'] ?? $body['csrf_token'] ?? '';
 $serverCsrf = $_SESSION['csrf_token'] ?? '';
-if (empty($serverCsrf) || !hash_equals($serverCsrf, $csrfToken)) {
-    respond(false, 'Invalid CSRF token.');
+if (empty($serverCsrf) || !hash_equals($serverCsrf, $csrfToken)) respond(false, 'Invalid CSRF token.');
+
+$RZP_KEY_ID     = getenv('RAZORPAY_KEY_ID')     ?: '';
+$RZP_KEY_SECRET = getenv('RAZORPAY_KEY_SECRET') ?: '';
+
+// ─── CREATE RAZORPAY ORDER (called BEFORE checkout) ─────────────────────────
+if ($action === 'create_razorpay_order') {
+    $amountPaise = (int)round((float)($body['amount'] ?? 0) * 100);
+    if ($amountPaise < 100) respond(false, 'Amount too small.');
+
+    $payload = json_encode([
+        'amount'   => $amountPaise,
+        'currency' => 'INR',
+        'receipt'  => 'mkt_' . $userId . '_' . time(),
+    ]);
+
+    $ch = curl_init('https://api.razorpay.com/v1/orders');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $payload,
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+        CURLOPT_USERPWD        => "$RZP_KEY_ID:$RZP_KEY_SECRET",
+        CURLOPT_TIMEOUT        => 15,
+    ]);
+    $res  = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($code !== 200) respond(false, 'Razorpay error. Please try again.');
+    $rzp = json_decode($res, true);
+    respond(true, 'Order created', ['rzp_order_id' => $rzp['id'], 'key' => $RZP_KEY_ID, 'amount' => $amountPaise]);
 }
 
+// ─── CREATE ORDER (after payment verified or credit) ─────────────────────────
 if ($action === 'create_order') {
-    $cartItems     = $data['items'] ?? []; // [{product_id, quantity}]
-    $paymentType   = $data['payment_type'] ?? 'online'; // 'online' or 'credit'
+    $cartItems        = $body['items'] ?? [];
+    $paymentType      = $body['payment_type'] ?? 'online';
+    $rzpPaymentId     = $body['razorpay_payment_id'] ?? '';
+    $rzpOrderId       = $body['razorpay_order_id']   ?? '';
+    $rzpSignature     = $body['razorpay_signature']   ?? '';
 
-    if (empty($cartItems)) {
-        respond(false, 'Cart is empty.');
+    if (empty($cartItems)) respond(false, 'Cart is empty.');
+    if (!in_array($paymentType, ['online', 'credit'])) respond(false, 'Invalid payment type.');
+
+    // Verify Razorpay signature for online payments
+    if ($paymentType === 'online') {
+        if (!$rzpPaymentId || !$rzpOrderId || !$rzpSignature) {
+            respond(false, 'Missing payment verification data.');
+        }
+        $expectedSig = hash_hmac('sha256', $rzpOrderId . '|' . $rzpPaymentId, $RZP_KEY_SECRET);
+        if (!hash_equals($expectedSig, $rzpSignature)) {
+            respond(false, 'Payment verification failed. Possible tampering detected.');
+        }
     }
 
-    if (!in_array($paymentType, ['online', 'credit'])) {
-        respond(false, 'Invalid payment type.');
-    }
-
-    // 1. Check User Profile & Market
-    $stmt = $pdo->prepare("SELECT market_id, lat, lng FROM users WHERE id = ?");
+    // User profile check
+    $stmt = $pdo->prepare("SELECT name, phone, shop_address, market_id, lat, lng FROM users WHERE id = ?");
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
-    if (empty($user['market_id']) || empty($user['lat']) || empty($user['lng'])) {
-        respond(false, 'Please complete your profile details (location) to place marketplace orders.');
-    }
+    if (empty($user['market_id'])) respond(false, 'Please complete your profile to place marketplace orders.');
 
-    // 2. Pay Later Eligibility
+    // Pay Later eligibility
     if ($paymentType === 'credit') {
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE user_id = ? AND status = 'delivered'");
-        $stmt->execute([$userId]);
-        $completedLaundryOrders = (int)$stmt->fetchColumn();
-
-        if ($completedLaundryOrders < 4) {
-            respond(false, 'Pay Later (Credit) is only available after completing 4 laundry orders.');
-        }
+        $cnt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE user_id = ? AND status = 'delivered'");
+        $cnt->execute([$userId]);
+        if ((int)$cnt->fetchColumn() < 4) respond(false, 'Pay Later is only available after 4 delivered laundry orders.');
     }
 
     try {
         $pdo->beginTransaction();
 
-        $totalAmount = 0.0;
+        $totalAmount   = 0.0;
         $resolvedItems = [];
 
-        // 3. Stock Check and Total Calc
         foreach ($cartItems as $item) {
-            $pId = (int)($item['product_id'] ?? 0);
-            $qty = max(1, (int)($item['quantity'] ?? 1));
-            
+            $pId         = (int)($item['product_id'] ?? 0);
+            $qty         = max(1, (int)($item['quantity'] ?? 1));
+            $clientPrice = (float)($item['price'] ?? 0);   // user-calculated price (per-meter × length)
+            $widthLabel  = $item['width_label']   ?? null;
+            $lenM        = isset($item['length_meters']) ? (float)$item['length_meters'] : null;
+
             $stmt = $pdo->prepare("SELECT id, price, stock, status, name FROM marketplace_products WHERE id = ? FOR UPDATE");
             $stmt->execute([$pId]);
             $product = $stmt->fetch();
 
-            if (!$product || $product['status'] !== 'active') {
-                throw new Exception("Product ID $pId is not available.");
-            }
-            if ($product['stock'] < $qty) {
-                throw new Exception("Insufficient stock for {$product['name']}. Available: {$product['stock']}");
-            }
+            if (!$product || $product['status'] !== 'active') throw new Exception("Product #$pId not available.");
+            if ($product['stock'] < $qty) throw new Exception("Insufficient stock for {$product['name']}.");
 
-            $lineTotal = $product['price'] * $qty;
-            $totalAmount += $lineTotal;
+            // If per-meter product, use client-calculated price (already = pricePerM × length)
+            $linePrice = ($widthLabel && $lenM > 0) ? $clientPrice : ($product['price'] * $qty);
+            $totalAmount += $linePrice;
+
             $resolvedItems[] = [
-                'product_id' => $pId,
-                'price'      => $product['price'],
-                'quantity'   => $qty
+                'product_id'   => $pId,
+                'price'        => $linePrice,
+                'quantity'     => $qty,
+                'width_label'  => $widthLabel,
+                'length_meters'=> $lenM,
             ];
         }
 
-        // 4. Wallet check for Credit
+        // Order count check for Pay Later
         if ($paymentType === 'credit') {
-            $stmt = $pdo->prepare("SELECT credit_limit, used_credit FROM user_wallet WHERE user_id = ? FOR UPDATE");
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM marketplace_orders WHERE user_id = ? AND payment_type = 'credit' AND payment_status = 'pending' FOR UPDATE");
             $stmt->execute([$userId]);
-            $wallet = $stmt->fetch();
-
-            if (!$wallet) {
-                // Initialize wallet
-                $pdo->prepare("INSERT INTO user_wallet (user_id, credit_limit, used_credit) VALUES (?, 2000.00, 0.00)")->execute([$userId]);
-                $limit = 2000.00;
-                $used = 0.00;
-            } else {
-                $limit = (float)$wallet['credit_limit'];
-                $used  = (float)$wallet['used_credit'];
-            }
-
-            if (($used + $totalAmount) > $limit) {
-                $available = max(0, $limit - $used);
-                throw new Exception("Credit limit exceeded. You have ₹$available available credit.");
+            $unpaid = (int)$stmt->fetchColumn();
+            if ($unpaid >= 4) {
+                throw new Exception("You have exhausted your 4 Pay Later orders. Please pay your pending dues to unlock more.");
             }
         }
 
-        // 5. Payment details (mocking razorpay for 'online')
         $paymentStatus = ($paymentType === 'online') ? 'paid' : 'pending';
 
-        if ($paymentType === 'online') {
-            $r_payId = $data['razorpay_payment_id'] ?? '';
-            if (!$r_payId) {
-                throw new Exception("Missing Razorpay payment ID for online payment.");
-            }
-            // Skipping strict razorpay signature check for MVP as it's similar to laundry's fallback logic
-        }
-
-        // 6. Delivery Assignment
-        $deliveryId = null;
+        // Auto-assign delivery partner
+        $deliveryId  = null;
         $orderStatus = 'placed';
-        
-        $dbStmt = $pdo->prepare("
-            SELECT id FROM users 
-            WHERE role = 'delivery' AND is_online = 1 AND market_id = ? 
-            ORDER BY current_orders ASC, id ASC LIMIT 1
-        ");
+        $dbStmt = $pdo->prepare("SELECT id FROM users WHERE role='delivery' AND is_online=1 AND market_id=? ORDER BY current_orders ASC, id ASC LIMIT 1");
         $dbStmt->execute([$user['market_id']]);
-        $bestBoy = $dbStmt->fetch();
-        
-        if ($bestBoy) {
-            $deliveryId = $bestBoy['id'];
+        $partner = $dbStmt->fetch();
+        if ($partner) {
+            $deliveryId  = $partner['id'];
             $orderStatus = 'assigned';
-            $pdo->prepare("UPDATE users SET current_orders = current_orders + 1 WHERE id = ?")->execute([$deliveryId]);
+            $pdo->prepare("UPDATE users SET current_orders = current_orders + 1 WHERE id=?")->execute([$deliveryId]);
         }
 
-        // 7. Insert Order
-        $stmt = $pdo->prepare("INSERT INTO marketplace_orders (user_id, delivery_id, total_amount, payment_type, payment_status, status) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$userId, $deliveryId, $totalAmount, $paymentType, $paymentStatus, $orderStatus]);
-        $orderId = $pdo->lastInsertId();
+        // Insert order
+        $stmt = $pdo->prepare("INSERT INTO marketplace_orders (user_id, delivery_id, total_amount, payment_type, payment_status, status, razorpay_order_id, razorpay_payment_id) VALUES (?,?,?,?,?,?,?,?)");
+        $stmt->execute([$userId, $deliveryId, $totalAmount, $paymentType, $paymentStatus, $orderStatus, $rzpOrderId ?: null, $rzpPaymentId ?: null]);
+        $orderId = (int)$pdo->lastInsertId();
 
-        // 8. Insert Items and Reduce Stock
-        $itmStmt = $pdo->prepare("INSERT INTO marketplace_order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)");
+        // Insert items with width/length
+        $itmStmt = $pdo->prepare("INSERT INTO marketplace_order_items (order_id, product_id, quantity, price, width_label, length_meters) VALUES (?,?,?,?,?,?)");
         $stkStmt = $pdo->prepare("UPDATE marketplace_products SET stock = stock - ? WHERE id = ?");
-
         foreach ($resolvedItems as $it) {
-            $itmStmt->execute([$orderId, $it['product_id'], $it['quantity'], $it['price']]);
+            $itmStmt->execute([$orderId, $it['product_id'], $it['quantity'], $it['price'], $it['width_label'], $it['length_meters']]);
             $stkStmt->execute([$it['quantity'], $it['product_id']]);
         }
 
-        // 9. Update Wallet
-        if ($paymentType === 'credit') {
-            $pdo->prepare("UPDATE user_wallet SET used_credit = used_credit + ? WHERE user_id = ?")->execute([$totalAmount, $userId]);
-        }
+        // No user_wallet to update
+
+        // Generate invoice number and store
+        $invoiceNo = 'MKT-' . strtoupper(substr(md5($orderId . time()), 0, 8));
+        $pdo->prepare("UPDATE marketplace_orders SET invoice_no = ? WHERE id = ?")->execute([$invoiceNo, $orderId]);
 
         $pdo->commit();
 
-        respond(true, 'Marketplace order placed successfully.', ['order_id' => $orderId, 'status' => $orderStatus]);
+        // Push notification
+        try {
+            sendPushNotification($pdo, $userId, '🛍️ Order Placed!', "Your DigiMarket order #{$orderId} (₹" . number_format($totalAmount,2) . ") has been placed.");
+        } catch (\Throwable $t) {}
+
+        respond(true, 'Marketplace order placed!', [
+            'order_id'    => $orderId,
+            'status'      => $orderStatus,
+            'invoice_no'  => $invoiceNo,
+            'total_amount'=> $totalAmount
+        ]);
     } catch (\Exception $e) {
         $pdo->rollBack();
         respond(false, $e->getMessage());
     }
 }
 
-// Check eligibility utility for frontend
+// ─── CHECK ELIGIBILITY ───────────────────────────────────────────────────────
 if ($action === 'check_eligibility') {
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE user_id = ? AND status = 'delivered'");
-    $stmt->execute([$userId]);
-    $completedLaundryOrders = (int)$stmt->fetchColumn();
-
-    $isEligible = ($completedLaundryOrders >= 4);
-    
-    $wallet = ['credit_limit' => 2000, 'used_credit' => 0];
-    if ($isEligible) {
-        $stmt = $pdo->prepare("SELECT credit_limit, used_credit FROM user_wallet WHERE user_id = ?");
-        $stmt->execute([$userId]);
-        $w = $stmt->fetch();
-        if ($w) {
-            $wallet['credit_limit'] = (float)$w['credit_limit'];
-            $wallet['used_credit'] = (float)$w['used_credit'];
-        }
+    $cnt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE user_id = ? AND status = 'delivered'");
+    $cnt->execute([$userId]);
+    $done      = (int)$cnt->fetchColumn();
+    $eligible  = $done >= 4;
+    $availableOrders = 0;
+    if ($eligible) {
+        $w = $pdo->prepare("SELECT COUNT(*) FROM marketplace_orders WHERE user_id = ? AND payment_type = 'credit' AND payment_status = 'pending'");
+        $w->execute([$userId]);
+        $unpaidCreditOrders = (int)$w->fetchColumn();
+        $availableOrders = max(0, 4 - $unpaidCreditOrders);
     }
+    respond(true, 'OK', ['is_eligible' => $eligible, 'laundry_orders' => $done, 'available_orders' => $availableOrders]);
+}
 
-    respond(true, 'Eligibility fetched', [
-        'is_eligible' => $isEligible, 
-        'laundry_orders' => $completedLaundryOrders,
-        'wallet' => $wallet
-    ]);
+// ─── GET MARKETPLACE CREDIT DUES (for combined billing in DigiWash) ──────────
+if ($action === 'get_credit_dues') {
+    $stmt = $pdo->prepare("
+        SELECT mo.id, mo.total_amount, mo.payment_type, mo.payment_status, mo.status,
+               mo.created_at, mo.invoice_no
+        FROM marketplace_orders mo
+        WHERE mo.user_id = ? AND mo.payment_type = 'credit' AND mo.payment_status = 'pending' AND mo.status != 'cancelled'
+        ORDER BY mo.created_at DESC
+    ");
+    $stmt->execute([$userId]);
+    $dues = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $total = array_sum(array_column($dues, 'total_amount'));
+    respond(true, 'OK', ['dues' => $dues, 'total_due' => (float)$total]);
 }
 
 respond(false, 'Unknown action.');

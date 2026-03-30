@@ -12,7 +12,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     <title>DigiWash - Admin Panel</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
     <style>
         :root { --sidebar-w: 240px; }
         body { background: #f1f5f9; }
@@ -37,8 +37,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 
         /* ── Section ── */
         .section-content { display: none; }
-        .section-content.active { display: block; animation: fadeUp 0.3s ease; }
-        @keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+        .section-content.active { display: block; animation: fadeUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; will-change: transform, opacity; backface-visibility: hidden; }
+        @keyframes fadeUp { from { opacity:0; transform:translate3d(0,10px,0); } to { opacity:1; transform:translate3d(0,0,0); } }
 
         /* ── Stats ── */
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1.2rem; margin-bottom: 2rem; }
@@ -87,9 +87,9 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
         .action-btns { display: flex; gap: 5px; flex-wrap: wrap; }
 
         /* ── Modal ── */
-        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 1000; align-items: center; justify-content: center; }
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
         .modal-overlay.open { display: flex; }
-        .modal-box { background: white; border-radius: 20px; padding: 2rem; width: 90%; max-width: 480px; max-height: 90vh; overflow-y: auto; position: relative; animation: fadeUp 0.25s ease; }
+        .modal-box { background: white; border-radius: 20px; padding: 2rem; width: 90%; max-width: 480px; max-height: 90vh; overflow-y: auto; position: relative; animation: fadeUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); will-change: transform, opacity; backface-visibility: hidden; }
         .modal-box.lg { max-width: 800px; }
         .modal-close { position: absolute; top: 1rem; right: 1rem; background: #f1f5f9; border: none; border-radius: 8px; width: 32px; height: 32px; cursor: pointer; font-size: 1rem; color: #64748b; }
         .modal-title { font-size: 1.2rem; font-weight: 800; color: #1e293b; margin-bottom: 1.2rem; }
@@ -596,6 +596,20 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             <button class="btn-sm btn-ghost btn-lg" onclick="closeModal('editProductModal')">Cancel</button>
         </div>
         <div class="form-msg" id="editProductMsg"></div>
+    </div>
+</div>
+
+<!-- Delete Product Modal -->
+<div class="modal-overlay" id="deleteProductModal">
+    <div class="modal-box" style="text-align:center; padding: 2.5rem 2rem; max-width:400px;">
+        <i class="material-icons-outlined" style="font-size:3.5rem; color:var(--danger); margin-bottom:1rem;">delete_forever</i>
+        <div class="modal-title" style="font-size:1.3rem;">Delete Product?</div>
+        <div class="modal-sub" style="font-size:.9rem; margin-top:.5rem;">Are you sure you want to delete "<b id="prdDelName"></b>"? This will also remove its pricing tiers. This action cannot be undone.</div>
+        
+        <div style="display:flex;gap:.75rem;margin-top:1.5rem;">
+            <button class="btn btn-danger" style="flex:1;justify-content:center;" onclick="confirmDeleteProduct()">Yes, Delete</button>
+            <button class="btn btn-ghost" style="flex:1;justify-content:center;" onclick="closeModal('deleteProductModal')">Cancel</button>
+        </div>
     </div>
 </div>
 
@@ -1260,7 +1274,7 @@ async function loadProducts() {
                 ${p.description?`<div style="font-size:0.82rem;color:#64748b;margin-bottom:8px;">${p.description}</div>`:''}
                 <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:1rem;">${priceList||'<span style="color:#94a3b8;font-size:0.82rem;">No prices set</span>'}</div>
                 <div class="action-btns">
-                    <button class="btn-sm btn-outline" onclick="openEditProduct(${p.id},'${p.name.replace(/'/g,'')}','${(p.description||'').replace(/'/g,'')}', ${JSON.stringify(p.prices)})">Edit</button>
+                    <button class="btn-sm btn-outline" data-product="${JSON.stringify(p).replace(/"/g, '&quot;')}" onclick="openEditProduct(JSON.parse(this.dataset.product))">Edit</button>
                     <button class="btn-sm ${p.is_active?'btn-ghost':'btn-success'}" onclick="toggleProduct(${p.id})">${p.is_active?'Deactivate':'Activate'}</button>
                     <button class="btn-sm btn-danger" onclick="deleteProduct(${p.id},'${p.name.replace(/'/g,'')}')">Delete</button>
                 </div>
@@ -1276,12 +1290,13 @@ function previewImg(input, previewId) {
     reader.readAsDataURL(file);
 }
 
-function addPricingRow(container = 'pricingRows', size = '', price = '', unit = 'per piece') {
+function addPricingRow(container = 'pricingRows', size = '', price = '', unit = 'per piece', priceId = '') {
     const row = document.createElement('div');
     row.className = 'pricing-row';
+    if (priceId) row.setAttribute('data-priceid', priceId);
     row.style.cssText = 'display:grid;grid-template-columns:1fr 100px 110px auto;gap:6px;align-items:center;margin-bottom:6px;';
     row.innerHTML = `
-        <input type="text" class="form-control pr-size" placeholder="Size / Label" value="${size}" style="font-size:0.85rem">
+        <input type="text" class="form-control pr-size" placeholder="Size / Label" value="${String(size).replace(/"/g, '&quot;')}" style="font-size:0.85rem">
         <input type="number" class="form-control pr-price" placeholder="Price" min="1" value="${price}" style="font-size:0.85rem">
         <select class="form-control pr-unit" style="font-size:0.85rem;padding:0.4rem">
             ${['per piece','per kg','per set','per pair'].map(u=>`<option ${u===unit?'selected':''}>${u}</option>`).join('')}
@@ -1330,14 +1345,14 @@ document.getElementById('addProductForm').addEventListener('submit', async e => 
     btn.textContent='Save Product'; btn.disabled=false;
 });
 
-function openEditProduct(id, name, desc, prices) {
-    document.getElementById('editPrdId').value = id;
-    document.getElementById('editPrdTitle').textContent = name;
-    document.getElementById('editPrdName').value = name;
-    document.getElementById('editPrdDesc').value = desc;
+function openEditProduct(p) {
+    document.getElementById('editPrdId').value = p.id;
+    document.getElementById('editPrdTitle').textContent = p.name;
+    document.getElementById('editPrdName').value = p.name;
+    document.getElementById('editPrdDesc').value = p.description || '';
     const container = document.getElementById('editPricingRows');
     container.innerHTML = '';
-    (prices||[]).forEach(pp => addPricingRow('editPricingRows', pp.size_label, pp.price, pp.unit));
+    (p.prices||[]).forEach(pp => addPricingRow('editPricingRows', pp.size_label, pp.price, pp.unit, pp.id));
     openModal('editProductModal');
 }
 
@@ -1373,11 +1388,26 @@ async function toggleProduct(id) {
     loadProducts();
 }
 
-async function deleteProduct(id, name) {
-    if (!confirm(`Delete product "${name}"? This will also remove its pricing tiers.`)) return;
-    const d = await prodApi('delete_product',{product_id:id});
-    if (d.success) { toast('success','Deleted',`"${name}" removed.`); loadProducts(); }
-    else toast('error','Error',d.message);
+let pendingDeleteProductId = null;
+let pendingDeleteProductName = '';
+
+function deleteProduct(id, name) {
+    pendingDeleteProductId = id;
+    pendingDeleteProductName = name;
+    document.getElementById('prdDelName').textContent = name;
+    openModal('deleteProductModal');
+}
+
+async function confirmDeleteProduct() {
+    closeModal('deleteProductModal');
+    if(!pendingDeleteProductId) return;
+    const d = await prodApi('delete_product', { product_id: pendingDeleteProductId });
+    if (d.success) { 
+        toast('success', 'Deleted', `"${pendingDeleteProductName}" removed.`); 
+        loadProducts(); 
+    } else {
+        toast('error', 'Error', d.message);
+    }
 }
 
 // ── INVOICES & CONFIGS ────────────────

@@ -1,7 +1,18 @@
 <?php
 require_once __DIR__ . '/config.php';
 
-// This file is designed to be executed via a system chron job daily (e.g. at 7:00 AM)
+// ISSUE-006 FIX: Protect cron.php from public access
+// Must be called with ?token=CRON_SECRET (set CRON_SECRET in .env)
+if (php_sapi_name() !== 'cli') {
+    $expectedToken = getenv('CRON_SECRET');
+    $providedToken = $_GET['token'] ?? '';
+    if (empty($expectedToken) || !hash_equals($expectedToken, $providedToken)) {
+        http_response_code(403);
+        die('403 Forbidden');
+    }
+}
+
+// This file is designed to be executed via a system cron job daily (e.g. at 7:00 AM)
 // It identifies users scheduled for Auto Pickup today and creates their dummy order
 // strictly enforcing their custom Pay Later bounds or COD limits.
 

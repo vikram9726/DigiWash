@@ -114,23 +114,32 @@ if ($action === 'create_rzp_order') {
 
 // --- CREATE BULK RAZORPAY ORDER ---
 if ($action === 'create_bulk_rzp_order') {
-    $stmt = $pdo->prepare("
+    // 1. Get Laundry Dues
+    $stmtWash = $pdo->prepare("
         SELECT p.order_id, p.amount 
         FROM payments p 
         JOIN orders o ON p.order_id = o.id 
         WHERE p.user_id = ? AND p.status = 'remaining' AND p.payment_mode LIKE 'PAY_LATER%' AND o.status != 'cancelled'
     ");
-    $stmt->execute([$userId]);
-    $pendingPayments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $stmtWash->execute([$userId]);
+    $pendingWash = $stmtWash->fetchAll(PDO::FETCH_ASSOC);
 
-    if (empty($pendingPayments)) {
+    // 2. Get Marketplace Dues
+    $stmtMkt = $pdo->prepare("
+        SELECT id as order_id, total_amount as amount 
+        FROM marketplace_orders 
+        WHERE user_id = ? AND payment_type = 'credit' AND payment_status = 'pending' AND status != 'cancelled'
+    ");
+    $stmtMkt->execute([$userId]);
+    $pendingMarket = $stmtMkt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($pendingWash) && empty($pendingMarket)) {
         respond(false, 'No pending Pay Later dues found to settle.');
     }
 
     $totalAmount = 0;
-    foreach ($pendingPayments as $p) {
-        $totalAmount += (float)$p['amount'];
-    }
+    foreach ($pendingWash as $p) $totalAmount += (float)$p['amount'];
+    foreach ($pendingMarket as $p) $totalAmount += (float)$p['amount'];
 
     $amountInPaise = round($totalAmount * 100);
 
@@ -158,14 +167,40 @@ if ($action === 'create_bulk_rzp_order') {
         try {
             $pdo->beginTransaction();
             $rzp_id = $resData['id'];
-            foreach ($pendingPayments as $p) {
+            
+            // Link RZP Order ID to Laundry Payments
+            foreach ($pendingWash as $p) {
                 $pdo->prepare("UPDATE payments SET rzp_order_id = ? WHERE order_id = ? AND status = 'remaining'")
                     ->execute([$rzp_id, $p['order_id']]);
             }
+            
+            // Link RZP Order ID to Marketplace Orders
+            foreach ($pendingMarket as $p) {
+                $pdo->prepare("UPDATE marketplace_orders SET razorpay_order_id = ? WHERE id = ?")
+                    ->execute([$rzp_id, $p['order_id']]);
+            }
+            
             $pdo->commit();
-            respond(true, 'Razorpay bulk order created', ['rzp_order_id' => $rzp_id, 'amount' => $amountInPaise, 'key' => $razorpayKeyId]);
-        } catch (\Exception $e) { $pdo->rollBack(); respond(false, 'DB Error: ' . $e->getMessage()); }
+
+            // Compute breakdown totals for frontend receipt
+            $laundryTotal = array_sum(array_column($pendingWash, 'amount'));
+            $marketTotal  = array_sum(array_column($pendingMarket, 'amount'));
+
+            respond(true, 'Razorpay bulk order created', [
+                'rzp_order_id'  => $rzp_id,
+                'amount'        => $amountInPaise,
+                'key'           => $razorpayKeyId,
+                'laundry_total' => round($laundryTotal, 2),
+                'laundry_count' => count($pendingWash),
+                'market_total'  => round($marketTotal, 2),
+                'market_count'  => count($pendingMarket),
+            ]);
+        } catch (\Exception $e) { 
+            $pdo->rollBack(); 
+            respond(false, 'DB Error: ' . $e->getMessage()); 
+        }
     } else {
+        error_log("Razorpay Bulk Error: " . $response);
         respond(false, 'Failed to initiate gateway.');
     }
 }
@@ -190,21 +225,36 @@ if ($action === 'verify_payment') {
             $pdo->beginTransaction();
 
             if ($localOrderId === 'BULK') {
-                $stmt = $pdo->prepare("SELECT order_id FROM payments WHERE rzp_order_id = ? AND user_id = ? AND status = 'remaining'");
-                $stmt->execute([$rzpOrderId, $userId]);
-                $orderIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
+                // Check Wash Orders
+                $stmtWash = $pdo->prepare("SELECT order_id FROM payments WHERE rzp_order_id = ? AND user_id = ? AND status = 'remaining'");
+                $stmtWash->execute([$rzpOrderId, $userId]);
+                $washOrderIds = $stmtWash->fetchAll(PDO::FETCH_COLUMN);
 
-                if (!empty($orderIds)) {
-                    $in = str_repeat('?,', count($orderIds) - 1) . '?';
-                    $orderParams = array_merge($orderIds, [$userId]);
+                if (!empty($washOrderIds)) {
+                    $in = str_repeat('?,', count($washOrderIds) - 1) . '?';
+                    $orderParams = array_merge($washOrderIds, [$userId]);
                     
-                    // Update orders matching the returned order IDs
+                    // Update Wash Orders
                     $stmtOrder = $pdo->prepare("UPDATE orders SET payment_status = 'completed', updated_at = NOW() WHERE id IN ($in) AND user_id = ?");
                     $stmtOrder->execute($orderParams);
 
-                    // Update payments universally matching the RZP order ID
+                    // Update Wash Payments
                     $stmtPayment = $pdo->prepare("UPDATE payments SET status = 'completed', rzp_payment_id = ?, updated_at = NOW() WHERE rzp_order_id = ?");
                     $stmtPayment->execute([$rzpPaymentId, $rzpOrderId]);
+                }
+
+                // Check Marketplace Orders
+                $stmtMkt = $pdo->prepare("SELECT id FROM marketplace_orders WHERE razorpay_order_id = ? AND user_id = ? AND payment_status = 'pending'");
+                $stmtMkt->execute([$rzpOrderId, $userId]);
+                $mktOrderIds = $stmtMkt->fetchAll(PDO::FETCH_COLUMN);
+
+                if (!empty($mktOrderIds)) {
+                    $inMkt = str_repeat('?,', count($mktOrderIds) - 1) . '?';
+                    $mktParams = array_merge($mktOrderIds, [$userId]);
+                    
+                    // Update Mkt Orders
+                    $stmtUpdateMkt = $pdo->prepare("UPDATE marketplace_orders SET payment_status = 'paid', razorpay_payment_id = ?, updated_at = NOW() WHERE id IN ($inMkt) AND user_id = ?");
+                    $stmtUpdateMkt->execute(array_merge([$rzpPaymentId], $mktParams));
                 }
             } else {
                 // 1. Update single order status

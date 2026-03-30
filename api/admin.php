@@ -352,17 +352,28 @@ if ($action === 'cancel_order') {
 // RETURN REQUESTS
 // ─────────────────────────────────────────────
 if ($action === 'get_returns') {
-    $filter = $data['filter'] ?? 'all';
-    $where  = $filter !== 'all' ? "WHERE r.admin_status = '$filter'" : '';
-    $stmt   = $pdo->query("
+    $filter        = $data['filter'] ?? 'all';
+    $allowed       = ['pending', 'approved', 'declined'];
+    $params        = [];
+
+    // ISSUE-001 FIX: Use allowlist + prepared statement instead of string interpolation
+    if (in_array($filter, $allowed)) {
+        $whereClause = 'WHERE r.admin_status = ?';
+        $params[]    = $filter;
+    } else {
+        $whereClause = '';
+    }
+
+    $stmt = $pdo->prepare("
         SELECT r.id, r.order_id, r.reason, r.photo_url, r.created_at, r.admin_status,
                o.total_amount, u.name as customer_name, u.phone
         FROM returns r
         JOIN orders o ON r.order_id = o.id
         JOIN users u ON r.user_id = u.id
-        $where
+        $whereClause
         ORDER BY r.created_at DESC
     ");
+    $stmt->execute($params);
     respond(true, 'Returns fetched', ['returns' => $stmt->fetchAll()]);
 }
 

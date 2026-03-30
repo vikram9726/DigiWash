@@ -64,6 +64,16 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// ISSUE-005 FIX: Security HTTP headers
+// Only send headers when not in CLI mode (e.g. cron.php)
+if (php_sapi_name() !== 'cli' && !headers_sent()) {
+    header('X-Frame-Options: DENY');
+    header('X-Content-Type-Options: nosniff');
+    header('X-XSS-Protection: 1; mode=block');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+    header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://www.gstatic.com https://cdnjs.cloudflare.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://api.razorpay.com https://fcm.googleapis.com https://identitytoolkit.googleapis.com;");
+}
+
 // Generate a CSRF token if one doesn't exist
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));

@@ -91,7 +91,34 @@ if ($action === 'update_status') {
             sendPushNotification($pdo, $order['user_id'], $title, $msg);
         }
 
-        $pdo->prepare("UPDATE marketplace_orders SET status = ? WHERE id = ?")->execute([$newStatus, $orderId]);
+        if (!in_array($order['status'], ['delivered', 'cancelled']) && $newStatus === 'cancelled') {
+            $items = $pdo->prepare("SELECT product_id, quantity FROM marketplace_order_items WHERE order_id = ?");
+            $items->execute([$orderId]);
+            foreach ($items->fetchAll() as $item) {
+                $pdo->prepare("UPDATE marketplace_products SET stock = stock + ? WHERE id = ?")->execute([$item['quantity'], $item['product_id']]);
+            }
+        }
+
+        if ($newStatus === 'delivered' && $role === 'delivery') {
+            $otp = trim((string)($data['otp'] ?? ''));
+            if (empty($otp)) throw new Exception("Delivery PIN is required from customer.");
+            
+            $otpSalt = "digiwash_delivery_otp_sec";
+            $isValid = false;
+            foreach ([floor(time() / 1800), floor(time() / 1800) - 1] as $win) {
+                $hashValue = abs(crc32($order['user_id'] . $otpSalt . $win)) % 1000000;
+                $expectedOtp = str_pad($hashValue, 6, '0', STR_PAD_LEFT);
+                if ($otp === $expectedOtp) { $isValid = true; break; }
+            }
+            if (!$isValid) throw new Exception("Invalid Delivery PIN. Check the customer's dashboard.");
+        }
+
+        $timeUpdate = '';
+        if ($newStatus === 'picked_up') $timeUpdate = 'picked_up_at = CURRENT_TIMESTAMP,';
+        if ($newStatus === 'delivered') $timeUpdate = 'delivered_at = CURRENT_TIMESTAMP,';
+        if ($newStatus === 'cancelled') $timeUpdate = 'cancelled_at = CURRENT_TIMESTAMP,';
+
+        $pdo->prepare("UPDATE marketplace_orders SET {$timeUpdate} status = ? WHERE id = ?")->execute([$newStatus, $orderId]);
 
         $pdo->commit();
         respond(true, 'Order status updated successfully.', ['status' => $newStatus]);
@@ -138,6 +165,46 @@ if ($action === 'assign_delivery') {
 
         $pdo->commit();
         respond(true, 'Delivery partner assigned successfully.');
+    } catch (\Exception $e) {
+        $pdo->rollBack();
+        respond(false, $e->getMessage());
+    }
+}
+
+// ─── USER CANCEL ORDER ────────────────────────────────────────────────────────
+if ($action === 'user_cancel_order') {
+    if ($role !== 'customer') respond(false, 'Unauthorized.');
+    
+    $orderId = (int)($data['order_id'] ?? 0);
+    if (!$orderId) respond(false, 'Order ID required.');
+
+    try {
+        $pdo->beginTransaction();
+
+        $stmt = $pdo->prepare("SELECT user_id, status, delivery_id FROM marketplace_orders WHERE id = ? FOR UPDATE");
+        $stmt->execute([$orderId]);
+        $order = $stmt->fetch();
+
+        if (!$order) throw new Exception('Order not found.');
+        if ($order['user_id'] != $userId) throw new Exception('Unauthorized to cancel this order.');
+        if (!in_array($order['status'], ['placed', 'assigned'])) throw new Exception('Order can no longer be cancelled as processing has started.');
+
+        // Restore stock
+        $items = $pdo->prepare("SELECT product_id, quantity FROM marketplace_order_items WHERE order_id = ?");
+        $items->execute([$orderId]);
+        foreach ($items->fetchAll() as $item) {
+            $pdo->prepare("UPDATE marketplace_products SET stock = stock + ? WHERE id = ?")->execute([$item['quantity'], $item['product_id']]);
+        }
+
+        // Decrement delivery 
+        if ($order['delivery_id']) {
+            $pdo->prepare("UPDATE users SET current_orders = GREATEST(0, current_orders - 1) WHERE id = ?")->execute([$order['delivery_id']]);
+        }
+
+        $pdo->prepare("UPDATE marketplace_orders SET status = 'cancelled', cancelled_at = CURRENT_TIMESTAMP WHERE id = ?")->execute([$orderId]);
+
+        $pdo->commit();
+        respond(true, 'Order cancelled successfully.');
     } catch (\Exception $e) {
         $pdo->rollBack();
         respond(false, $e->getMessage());

@@ -147,16 +147,37 @@ if ($action === 'dummy_login') {
         respond(false, 'Phone number must be exactly 10 digits.');
     }
 
+    // ISSUE-002 FIX: OTP rate limiting — max 5 attempts per 10 minutes per phone
+    try {
+        $rateSql = $pdo->prepare("
+            SELECT COUNT(*) FROM otp_attempts
+            WHERE phone = ? AND created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE)
+        ");
+        $rateSql->execute([$phone]);
+        if ((int)$rateSql->fetchColumn() >= 5) {
+            respond(false, 'Too many login attempts. Please wait 10 minutes before trying again.');
+        }
+        $pdo->prepare("INSERT INTO otp_attempts (phone) VALUES (?)")->execute([$phone]);
+    } catch (\Exception $e) {
+        // Table may not exist yet — non-fatal, continue
+        error_log("OTP rate limit check failed: " . $e->getMessage());
+    }
+
     $user = null;
     $role = '';
 
     // Check Role and Dummy OTP in users table
-    $stmt = $pdo->prepare("SELECT id, role, phone FROM users WHERE phone = ? AND dummy_otp = ? LIMIT 1");
+    $stmt = $pdo->prepare("SELECT id, role, phone, is_blocked FROM users WHERE phone = ? AND dummy_otp = ? LIMIT 1");
     $stmt->execute([$phone, $otp]);
     $user = $stmt->fetch();
 
     if (!$user) {
         respond(false, 'Invalid Phone or Dummy OTP.');
+    }
+
+    // ISSUE-004 FIX: Blocked user check
+    if (!empty($user['is_blocked'])) {
+        respond(false, 'Your account has been blocked. Please contact support.');
     }
 
     session_regenerate_id(true);
