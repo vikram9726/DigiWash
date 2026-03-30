@@ -1,0 +1,90 @@
+================================================================================
+          DIGIWASH END-TO-END MANUAL TESTING FLOW & SEVERITY MATRIX
+================================================================================
+
+Document Purpose: Provide a chronological, step-by-step testing flow for the 
+DigiWash platform, categorizing every action by its business severity level.
+
+================================================================================
+                       PART 1: SEVERITY LEVEL DEFINITIONS
+================================================================================
+
+[CRITICAL] (S0)
+Definition: System crash, data loss, severe security breach, or core business flow entirely blocked (e.g., Unable to place order, Razorpay webhook fails, SQL Injection possible).
+Action: Stop release immediately. Resolve within 2 hours.
+
+[HIGH] (S1)
+Definition: Major feature failing but workaround exists, or significant UX disruption (e.g., OTP rate limiting fails, Pagination breaks at 150 items, incorrect distance calculation).
+Action: Must be fixed before production deployment.
+
+[MEDIUM] (S2)
+Definition: Moderate issue affecting non-critical paths, formatting errors, or minor edge cases (e.g., "Pay All Now" button styling broken on Firefox, wrong error message text).
+Action: Fix in the current sprint or prior to marketing push.
+
+[LOW] (S3)
+Definition: Cosmetic issues, typos, or minor UI glitches on specific rare screen sizes (e.g., slight padding issue on an admin table).
+Action: Add to backlog.
+
+================================================================================
+                       PART 2: THE END-TO-END TESTING FLOW
+================================================================================
+
+--- PHASE 1: ENVIRONMENT & DEPLOYMENT WARM-UP ---
+1.1 Verify HTTPS/SSL is active on the domain. [HIGH]
+1.2 Attempt to access `config.php` and `.env` directly via browser URI (Should return 403 Forbidden). [CRITICAL]
+1.3 Verify `cron.php` returns 403 Forbidden if accessed without the secret `?token=...`. [HIGH]
+
+--- PHASE 2: AUTHENTICATION & ONBOARDING FLOW ---
+2.1 Register a new customer via Phone OTP. [CRITICAL]
+    - Enter phone number -> Wait for SMS -> Input 6-digit OTP -> Verify.
+2.2 Deliberately enter an invalid OTP 3 times to check for "Invalid Code" response. [MEDIUM]
+2.3 Rapidly request OTP 6 times in 5 minutes to trigger the Rate Limiter (Anti-Flood). [HIGH]
+2.4 Authenticate via Google SSO (OAuth2). Verify automatic user row creation in DB. [HIGH]
+2.5 Block a user via Admin Panel, then attempt to log in with that blocked user's phone number. Must be rejected. [CRITICAL]
+
+--- PHASE 3: CUSTOMER CORE LAUNDRY FLOW ---
+3.1 Ensure new user is prompted to set up Profile (Name, Address, GPS Lat/Lng detection). [HIGH]
+3.2 Attempt to bypass profile creation and go straight to "New Order". Must redirect back to Profile. [HIGH]
+3.3 Add 4 items to the Laundry Cart. Verify the Price multiplication math is exactly correct. [CRITICAL]
+3.4 Apply a single-use Coupon Code. Verify total decreases accurately. [HIGH]
+3.5 Attempt to apply the SAME single-use Coupon Code in two separate browser tabs simultaneously (Testing Database Race Conditions). Only one should succeed. [CRITICAL]
+3.6 Place order via 'Cash on Delivery' (COD). Note the generated Order ID. [CRITICAL]
+3.7 Check that an automated Firebase Push Notification (FCM) is sent to the phone. [HIGH]
+
+--- PHASE 4: MARKETPLACE COMMERCE FLOW (PAY LATER) ---
+4.1 Navigate to the "DigiMarket" tab. 
+4.2 Add a simple product (e.g., 5kg Detergent). [HIGH]
+4.3 Add a 'Per-Meter' product (e.g., Curtains). Select 4ft width and input 10 meters length. Verify Price = (Base Rate * Length). [CRITICAL]
+4.4 Check out using the "Pay Later" option. [CRITICAL]
+4.5 Attempt to place 5 consecutive "Pay Later" orders. The 5th order MUST be blocked by the 'Credit Limit Exceeded' guard. [CRITICAL]
+
+--- PHASE 5: DELIVERY PARTNER OPERATIONS FLOW ---
+5.1 Log in via Staff Portal using a Delivery Partner Phone + Dummy PIN. [CRITICAL]
+5.2 Verify the new 'Pending' orders (from Phase 3 & 4) appear in the delivery queue. [HIGH]
+5.3 Swipe to accept the order. Verify it disappears from the global pool for other drivers. [CRITICAL]
+5.4 Fake a network disconnect (Turn off WiFi / Go Offline in DevTools). Tap "Mark Picked Up". Reconnect WiFi. Verify the PWA syncs the status to the server successfully. [HIGH]
+
+--- PHASE 6: PROOF OF DELIVERY & PIN VALIDATION ---
+6.1 In Delivery Dashboard, move order to "Out for Delivery". Customer phone number should now unhide. [MEDIUM]
+6.2 Attempt to mark the order "Delivered". The UI MUST demand a 6-digit Customer PIN from the driver. [CRITICAL]
+6.3 Enter an intentional wrong PIN. Order must remain undelivered. [HIGH]
+6.4 Look at the Customer's Dashboard to retrieve their live rotating 6-digit PIN.
+6.5 Enter the correct PIN in the Delivery App. Order status changes to "Completed". [CRITICAL]
+
+--- PHASE 7: ADMIN & FINANCIAL RECONCILIATION FLOW ---
+7.1 Log into Admin Panel. Navigate to Orders.
+7.2 Test the Pagination by clicking 'Page 2'. Verify offset accurately fetches the next 30 records without crashing or looping N+1 queries. [HIGH]
+7.3 Navigate to Customer -> Payments tab. Verify both Laundry Dues and Marketplace Dues appear together in the "Combined Credit Due" banner. [CRITICAL]
+7.4 Click "Pay All Now". Verify a Razorpay pop-up initializes with the EXACT combined sum. [CRITICAL]
+7.5 Complete a successful test payment via Razorpay.
+7.6 Wait 2 seconds. Verify that ALL pending orders (Laundry + Marketplace) are atomically marked 'paid' in the database. [CRITICAL]
+7.7 Download the PDF Invoice via dompdf. Verify the GST/HSN calculation aligns with the Razorpay receipt. [HIGH]
+
+--- PHASE 8: SECURITY & BOUNDARY TESTING (HACKER SCENARIOS) ---
+8.1 SQL Injection Attempt: Edit a Customer's name to `' OR 1=1; DROP TABLE users;--`. Verify it saves harmlessly as text. [CRITICAL]
+8.2 File Upload Spoofing: Submit a 'Return/Dispute' request. Attempt to upload a `.php` script renamed as `image.php.jpg`. Verify `finfo_file` MIME validation rejects it. [CRITICAL]
+8.3 Horizontal Privilege Escalation: Log in as a Customer. Manually type `yourdomain.com/admin/dashboard.php` into the URL bar. Verify access is denied and redirected. [CRITICAL]
+
+================================================================================
+                                END OF DOCUMENT
+================================================================================

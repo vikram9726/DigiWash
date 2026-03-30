@@ -222,6 +222,10 @@ if ($action === 'get_all_orders') {
     $search = '%' . ($data['search'] ?? '') . '%';
     $marketIdFilter = (int)($data['market_id'] ?? 0);
 
+    $page    = max(1, (int)($data['page'] ?? 1));
+    $perPage = max(10, (int)($data['limit'] ?? 50));
+    $offset  = ($page - 1) * $perPage;
+
     $where = "WHERE (u.name LIKE ? OR u.phone LIKE ? OR CAST(o.id AS CHAR) LIKE ?)";
     $params = [$search, $search, $search];
 
@@ -237,6 +241,16 @@ if ($action === 'get_all_orders') {
         $params[] = $filter;
     }
 
+    $countStmt = $pdo->prepare("
+        SELECT COUNT(*) 
+        FROM orders o 
+        JOIN users u ON o.user_id = u.id 
+        $where
+    ");
+    $countStmt->execute($params);
+    $totalCount = $countStmt->fetchColumn();
+    $totalPages = ceil($totalCount / $perPage);
+
     $stmt = $pdo->prepare("
         SELECT o.*, u.name as customer_name, u.phone as customer_phone, 
                d.name as delivery_name, m.name as market_name
@@ -245,7 +259,7 @@ if ($action === 'get_all_orders') {
         LEFT JOIN users d ON o.delivery_id = d.id 
         LEFT JOIN markets m ON o.market_id = m.id
         $where
-        ORDER BY o.created_at DESC LIMIT 150
+        ORDER BY o.created_at DESC LIMIT $perPage OFFSET $offset
     ");
     $stmt->execute($params);
     $orders = $stmt->fetchAll();
@@ -256,7 +270,17 @@ if ($action === 'get_all_orders') {
     $stmt3 = $pdo->query("SELECT id, name FROM markets ORDER BY name ASC");
     $markets = $stmt3->fetchAll();
 
-    respond(true, 'Orders fetched', ['orders' => $orders, 'delivery_partners' => $partners, 'markets' => $markets]);
+    respond(true, 'Orders fetched', [
+        'orders' => $orders, 
+        'delivery_partners' => $partners, 
+        'markets' => $markets,
+        'pagination' => [
+            'total' => $totalCount,
+            'total_pages' => $totalPages,
+            'current_page' => $page,
+            'limit' => $perPage
+        ]
+    ]);
 }
 
 if ($action === 'assign_order') {

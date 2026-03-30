@@ -331,10 +331,25 @@ if ($action === 'get_orders') {
     $stmt->execute([$userId]);
     $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    foreach ($orders as &$order) {
-        $itStmt = $pdo->prepare("SELECT product_name, size_label, quantity FROM order_items WHERE order_id = ?");
-        $itStmt->execute([$order['id']]);
-        $order['items'] = $itStmt->fetchAll(PDO::FETCH_ASSOC);
+    if (!empty($orders)) {
+        $orderIds = array_column($orders, 'id');
+        $inQuery = str_repeat('?,', count($orderIds) - 1) . '?';
+        $itStmt = $pdo->prepare("SELECT order_id, product_name, size_label, quantity FROM order_items WHERE order_id IN ($inQuery)");
+        $itStmt->execute($orderIds);
+        $allItems = $itStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $itemsByOrder = [];
+        foreach ($allItems as $item) {
+            $itemsByOrder[$item['order_id']][] = [
+                'product_name' => $item['product_name'],
+                'size_label'   => $item['size_label'],
+                'quantity'     => $item['quantity']
+            ];
+        }
+        
+        foreach ($orders as &$order) {
+            $order['items'] = $itemsByOrder[$order['id']] ?? [];
+        }
     }
 
     respond(true, 'Orders fetched', ['orders' => $orders]);
