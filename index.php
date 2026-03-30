@@ -44,15 +44,16 @@ if (isset($_SESSION['user_id'])) {
         <div class="max-w-7xl mx-auto px-6 md:px-12 flex items-center justify-between">
             <div class="flex items-center gap-2">
                 <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-blue-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
-                    <i class="material-icons-outlined">check_circle</i>
+                    <i class="material-icons-outlined">local_laundry_service</i>
                 </div>
                 <span class="text-xl font-bold tracking-tight text-slate-800">DigiWash</span>
             </div>
 
-            <div class="hidden md:flex items-center gap-8 font-medium text-slate-600">
+            <div class="hidden md:flex items-center gap-6 font-medium text-slate-600">
                 <a href="#how" class="hover:text-indigo-600 transition-colors">How it works</a>
                 <a href="#features" class="hover:text-indigo-600 transition-colors">Features</a>
-                <a href="#reviews" class="hover:text-indigo-600 transition-colors">Trust</a>
+                <a href="about.php" class="hover:text-indigo-600 transition-colors">About</a>
+                <a href="contact.php" class="hover:text-indigo-600 transition-colors">Contact</a>
             </div>
 
             <div class="hidden md:flex">
@@ -207,20 +208,44 @@ if (isset($_SESSION['user_id'])) {
         </div>
     </section>
 
-    <!-- Minimal Footer -->
-    <footer class="border-t border-slate-200 bg-white py-12 px-6">
-        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
-            <div class="flex items-center gap-2">
-                <i class="material-icons-outlined text-indigo-600">check_circle</i>
-                <span class="text-xl font-bold text-slate-800">DigiWash Inc.</span>
+    <!-- Full Footer -->
+    <footer class="bg-slate-900 text-slate-300 py-12">
+        <div class="max-w-7xl mx-auto px-6 md:px-12 grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div>
+                <div class="flex items-center gap-2 mb-4">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-blue-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                        <i class="material-icons-outlined">local_laundry_service</i>
+                    </div>
+                    <span class="font-black text-xl text-white">DigiWash</span>
+                </div>
+                <p class="text-sm leading-relaxed mb-4 text-slate-400">Premium laundry and textile care delivered directly to your shop. Trusted by households and local shopkeepers.</p>
             </div>
-            <div class="text-slate-500 text-sm">
-                &copy; <?= date('Y') ?> DigiWash. Premium SaaS Laundry.
+            <div>
+                <h3 class="text-white font-bold mb-4">Company</h3>
+                <ul class="space-y-2 text-sm text-slate-400">
+                    <li><a href="about.php" class="hover:text-indigo-400 transition">About Us</a></li>
+                    <li><a href="contact.php" class="hover:text-indigo-400 transition">Contact Us</a></li>
+                </ul>
             </div>
-            <div class="flex gap-4">
-                <a href="#" class="text-slate-400 hover:text-indigo-600 transition-colors font-medium text-sm">Privacy</a>
-                <a href="#" class="text-slate-400 hover:text-indigo-600 transition-colors font-medium text-sm">Terms</a>
+            <div>
+                <h3 class="text-white font-bold mb-4">Legal</h3>
+                <ul class="space-y-2 text-sm text-slate-400">
+                    <li><a href="privacy-policy.php" class="hover:text-indigo-400 transition">Privacy Policy</a></li>
+                    <li><a href="terms.php" class="hover:text-indigo-400 transition">Terms & Conditions</a></li>
+                    <li><a href="refund-policy.php" class="hover:text-indigo-400 transition">Refund & Cancellation</a></li>
+                </ul>
             </div>
+            <div>
+                <h3 class="text-white font-bold mb-4">Contact</h3>
+                <ul class="space-y-2 text-sm text-slate-400">
+                    <li><a href="javascript:void(0)" onclick="openContactModal()" class="flex items-center gap-2 mb-2 hover:text-indigo-400 transition"><i class="material-icons-outlined text-base">message</i> Contact Admin via Message</a></li>
+                    <li class="flex items-center gap-2 mb-2"><i class="material-icons-outlined text-base">phone</i> +91 9726232915</li>
+                    <li class="flex items-start gap-2"><i class="material-icons-outlined text-base">location_on</i> India</li>
+                </ul>
+            </div>
+        </div>
+        <div class="max-w-7xl mx-auto px-6 md:px-12 mt-12 pt-8 border-t border-slate-800 text-sm text-center text-slate-500">
+            &copy; 2026 DigiWash. All rights reserved.
         </div>
     </footer>
 
@@ -510,6 +535,78 @@ if (isset($_SESSION['user_id'])) {
                 err.innerText = 'Server connection failed.'; err.style.display = 'block'; btn.innerHTML = 'Verify & Enter'; btn.disabled = false;
             }
         });
+    </script>
+
+    <!-- Contact Modal -->
+    <div id="contactModal" class="fixed inset-0 z-[200] hidden bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
+        <div class="bg-white rounded-3xl w-full max-w-md shadow-2xl scale-95 transition-transform duration-300 relative" id="contactModalContent">
+            <button onclick="closeContactModal()" class="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition">
+                <i class="material-icons-outlined text-lg">close</i>
+            </button>
+            <div class="p-6 md:p-8">
+                <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-5">
+                    <i class="material-icons-outlined text-2xl">support_agent</i>
+                </div>
+                <h3 class="text-2xl font-bold text-slate-900 mb-1">Message Admin</h3>
+                <p class="text-slate-500 text-sm mb-6">Have a question or suggestion? We'll get back to you soon.</p>
+                <form id="contactFormMain" onsubmit="submitContactMain(event)">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Your Name</label>
+                            <input type="text" id="cName" required autocomplete="off" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition" placeholder="John Doe">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Mobile Number</label>
+                            <input type="tel" id="cPhone" required pattern="[0-9]{10}" maxlength="10" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition" placeholder="10-digit number">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Message</label>
+                            <textarea id="cMsg" required rows="3" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition resize-none" placeholder="How can we help?"></textarea>
+                        </div>
+                    </div>
+                    <div id="cError" class="mt-4 text-red-500 text-sm font-semibold hidden bg-red-50 p-3 rounded-lg text-center"></div>
+                    <div id="cSuccess" class="mt-4 text-emerald-600 text-sm font-semibold hidden bg-emerald-50 p-3 rounded-lg text-center"></div>
+                    <button type="submit" id="cSubmitBtn" class="w-full mt-5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3.5 rounded-xl flex justify-center items-center gap-2 transition shadow-lg shadow-indigo-600/30">
+                        <span>Send Message</span><i class="material-icons-outlined text-base">send</i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const cModal = document.getElementById('contactModal');
+        const cModalBox = document.getElementById('contactModalContent');
+        function openContactModal() {
+            cModal.classList.remove('hidden');
+            setTimeout(() => { cModal.classList.remove('opacity-0'); cModalBox.classList.remove('scale-95'); cModalBox.classList.add('scale-100'); }, 10);
+            document.getElementById('contactFormMain').reset();
+            document.getElementById('cError').classList.add('hidden');
+            document.getElementById('cSuccess').classList.add('hidden');
+            document.getElementById('cSubmitBtn').style.display = 'flex';
+        }
+        function closeContactModal() {
+            cModal.classList.add('opacity-0'); cModalBox.classList.remove('scale-100'); cModalBox.classList.add('scale-95');
+            setTimeout(() => cModal.classList.add('hidden'), 300);
+        }
+        async function submitContactMain(e) {
+            e.preventDefault();
+            const cErr = document.getElementById('cError'), cOk = document.getElementById('cSuccess'), cBtn = document.getElementById('cSubmitBtn');
+            cErr.classList.add('hidden');
+            cBtn.disabled = true; cBtn.innerHTML = '<i class="material-icons-outlined" style="animation:spin 1s linear infinite">autorenew</i> Sending...';
+            try {
+                const res = await fetch('api/contact.php', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ name: document.getElementById('cName').value.trim(), phone: document.getElementById('cPhone').value.trim(), message: document.getElementById('cMsg').value.trim() })
+                });
+                const r = await res.json();
+                if (r.success) { cOk.innerText = r.message; cOk.classList.remove('hidden'); cBtn.style.display='none'; setTimeout(closeContactModal, 2500); }
+                else { cErr.innerText = r.message || 'Failed.'; cErr.classList.remove('hidden'); cBtn.disabled=false; cBtn.innerHTML='<span>Send Message</span><i class="material-icons-outlined text-base">send</i>'; }
+            } catch(err) { cErr.innerText='Network error.'; cErr.classList.remove('hidden'); cBtn.disabled=false; cBtn.innerHTML='<span>Send Message</span><i class="material-icons-outlined text-base">send</i>'; }
+        }
+        cModal.addEventListener('click', e => { if(e.target === cModal) closeContactModal(); });
+        // Spinner keyframe
+        const _s = document.createElement('style'); _s.textContent='@keyframes spin{to{transform:rotate(360deg)}}'; document.head.appendChild(_s);
     </script>
 </body>
 </html>

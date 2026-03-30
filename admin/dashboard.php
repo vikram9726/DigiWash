@@ -164,6 +164,11 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
         <a href="marketplace_orders.php" class="menu-item" style="text-decoration:none;">
             <i class="material-icons-outlined">shopping_cart_checkout</i> Store Orders
         </a>
+        <div class="sidebar-section">Support</div>
+        <div class="menu-item" id="nav-messages" onclick="switchTab('messages',this)">
+            <i class="material-icons-outlined">forum</i> Messages
+            <span class="badge-count" id="msgBadge" style="display:none">0</span>
+        </div>
         <div class="sidebar-section">Billing & Marketing</div>
         <div class="menu-item" id="nav-invoices" onclick="switchTab('invoices',this)">
             <i class="material-icons-outlined">receipt_long</i> Invoices & Setup
@@ -383,6 +388,25 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
                 <button class="btn-sm btn-primary" onclick="openModal('addProductModal')">+ Add Product</button>
             </div>
             <div id="productsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.2rem;margin-top:1rem;"></div>
+        </section>
+
+        <!-- ══ MESSAGES ══ -->
+        <section id="messages" class="section-content">
+            <div class="top-bar"><div class="page-title">Customer <span>Messages</span></div></div>
+            <div class="filter-chips">
+                <div class="chip active" onclick="loadMessages('all',this)">All</div>
+                <div class="chip" onclick="loadMessages('new',this)">New</div>
+                <div class="chip" onclick="loadMessages('read',this)">Read</div>
+                <div class="chip" onclick="loadMessages('resolved',this)">Resolved</div>
+            </div>
+            <div class="panel">
+                <div class="tbl-wrap">
+                    <table>
+                        <thead><tr><th>#</th><th>Name</th><th>Phone</th><th>Message</th><th>Status</th><th>Received</th><th>Actions</th></tr></thead>
+                        <tbody id="messagesBody"><tr><td colspan="7"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
+                    </table>
+                </div>
+            </div>
         </section>
 
     </main>
@@ -645,6 +669,7 @@ async function switchTab(id, el) {
     if (id === 'partners') loadPartners();
     if (id === 'returns') loadReturns('all');
     if (id === 'products') loadProducts();
+    if (id === 'messages') loadMessages('all');
     if (id === 'invoices') {
         loadAdminInvoices();
         loadReceiptSettings();
@@ -1490,7 +1515,85 @@ document.querySelectorAll('.modal-overlay').forEach(m => {
 document.addEventListener('DOMContentLoaded', () => {
     loadStats();
     loadAnalytics();
+    loadMessageBadge();
 });
+
+// ─────────────────────────────
+// MESSAGES
+// ─────────────────────────────
+async function loadMessageBadge() {
+    try {
+        const r = await fetch('../api/contact.php?action=count_new');
+        const d = await r.json();
+        const badge = document.getElementById('msgBadge');
+        if (d.count > 0) { badge.textContent = d.count; badge.style.display = 'inline'; }
+        else badge.style.display = 'none';
+    } catch(e) {}
+}
+
+async function loadMessages(status = 'all', chipEl = null) {
+    if (chipEl) {
+        document.querySelectorAll('#messages .chip').forEach(c => c.classList.remove('active'));
+        chipEl.classList.add('active');
+    }
+    const tbody = document.getElementById('messagesBody');
+    tbody.innerHTML = '<tr><td colspan="7"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr>';
+    try {
+        const r = await fetch(`../api/contact.php?action=list&status=${status}`);
+        const d = await r.json();
+        if (!d.success || !d.messages.length) {
+            tbody.innerHTML = '<tr><td colspan="7"><div class="no-data"><i class="material-icons-outlined">forum</i>No messages found.</div></td></tr>';
+            return;
+        }
+        const statusMap = { new: 'b-red', read: 'b-amber', resolved: 'b-green' };
+        tbody.innerHTML = d.messages.map(m => `
+            <tr id="msg-row-${m.id}">
+                <td><strong>#${m.id}</strong></td>
+                <td><strong>${m.name}</strong></td>
+                <td>${m.phone}</td>
+                <td style="max-width:320px;white-space:normal;line-height:1.5">${m.message}</td>
+                <td><span class="badge ${statusMap[m.status] || 'b-gray'}">${m.status.toUpperCase()}</span></td>
+                <td style="font-size:0.8rem">${new Date(m.created_at).toLocaleString('en-IN')}</td>
+                <td>
+                    <div class="action-btns">
+                        ${m.status === 'new' ? `<button class="btn-sm btn-primary" onclick="updateMessage(${m.id},'read')">Mark Read</button>` : ''}
+                        ${m.status !== 'resolved' ? `<button class="btn-sm btn-success" onclick="updateMessage(${m.id},'resolved')">Resolve</button>` : ''}
+                        <button class="btn-sm btn-danger" onclick="deleteMessage(${m.id})">Delete</button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    } catch(e) {
+        tbody.innerHTML = '<tr><td colspan="7"><div class="no-data"><i class="material-icons-outlined">error</i>Failed to load messages.</div></td></tr>';
+    }
+}
+
+async function updateMessage(id, status) {
+    try {
+        const r = await fetch('../api/contact.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+            body: JSON.stringify({ action: 'update_status', id, status })
+        });
+        const d = await r.json();
+        if (d.success) { toast('success', 'Message', 'Status updated.'); loadMessages('all'); loadMessageBadge(); }
+        else toast('error', 'Error', d.message);
+    } catch(e) { toast('error', 'Error', 'Network error.'); }
+}
+
+async function deleteMessage(id) {
+    if (!confirm('Delete this message permanently?')) return;
+    try {
+        const r = await fetch('../api/contact.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+            body: JSON.stringify({ action: 'delete', id })
+        });
+        const d = await r.json();
+        if (d.success) { toast('success', 'Deleted', 'Message removed.'); loadMessages('all'); loadMessageBadge(); }
+        else toast('error', 'Error', d.message);
+    } catch(e) { toast('error', 'Error', 'Network error.'); }
+}
 </script>
 </body>
 </html>

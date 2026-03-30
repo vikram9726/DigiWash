@@ -112,3 +112,13 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 -- Default Admin User (Password is typically not needed if using strict phone/OTP login, but let's keep it simple with phone login for now)
 INSERT INTO users (phone, role, name) VALUES ('9726232915', 'admin', 'System Admin') ON DUPLICATE KEY UPDATE name='System Admin';
+
+-- Contact Messages Table
+CREATE TABLE IF NOT EXISTS contact_messages (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    phone VARCHAR(15) NOT NULL,
+    message TEXT NOT NULL,
+    status ENUM('new', 'read', 'resolved') DEFAULT 'new',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

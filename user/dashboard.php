@@ -795,7 +795,13 @@ document.getElementById('submitOrderBtn')?.addEventListener('click', async () =>
                 else { toast('error','Transaction Verified, Order Failed', d.message); btn.disabled=false; btn.innerHTML='<i class="material-icons-outlined" style="font-size:1rem;">local_shipping</i> Request Pickup'; }
             },
             prefill: { name:'<?= $userName ?>', contact:'<?= $userPhone ?>' },
-            theme: { color:'#6366f1' }
+            theme: { color:'#6366f1' },
+            modal: {
+                ondismiss: function() {
+                    btn.innerHTML='<i class="material-icons-outlined" style="font-size:1rem;">local_shipping</i> Request Pickup';
+                    btn.disabled = false;
+                }
+            }
         };
         const rzp = new Razorpay(rzpOpts);
         rzp.on('payment.failed', function (r){
