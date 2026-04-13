@@ -321,7 +321,7 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
                 <div class="profile-av"><?= strtoupper(substr($userName,0,1)) ?></div>
                 <div>
                     <div class="profile-name"><?= $userName ?></div>
-                    <div class="profile-phone">📞 <?= $userPhone ?></div>
+                    <div class="profile-phone">📞 <?= strpos($user['phone'] ?? '', 'GOOGLE_PENDING_') === 0 ? '⚠️ Phone not set' : $userPhone ?></div>
                 </div>
             </div>
 
@@ -330,9 +330,16 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
                 <div class="card">
                     <div style="font-weight:800;font-size:1rem;margin-bottom:1.25rem;">Edit Details</div>
                     <form id="profileForm">
+                        <?php $isPendingPhone = strpos($user['phone'] ?? '', 'GOOGLE_PENDING_') === 0; ?>
                         <div class="form-group">
-                            <label>Phone (read-only)</label>
-                            <input class="form-control" value="<?= $userPhone ?>" readonly style="background:#f1f5f9;cursor:not-allowed;">
+                            <?php if ($isPendingPhone): ?>
+                                <label style="color:#d97706;">📱 Add Your Phone Number <span style="color:#ef4444;">*</span></label>
+                                <input type="tel" id="p_phone" name="p_phone" class="form-control" placeholder="Enter 10-digit mobile number" maxlength="10" inputmode="numeric" style="border-color:#f59e0b;" required>
+                                <small style="color:#d97706;font-weight:600;">Your Google account has no phone. Add one to use all features.</small>
+                            <?php else: ?>
+                                <label>Phone (read-only)</label>
+                                <input class="form-control" value="<?= $userPhone ?>" readonly style="background:#f1f5f9;cursor:not-allowed;">
+                            <?php endif; ?>
                         </div>
                         <div class="form-group">
                             <label>Full Name *</label>
@@ -1252,6 +1259,7 @@ document.getElementById('profileForm')?.addEventListener('submit', async e => {
     const btn = document.getElementById('saveProfileBtn');
     const msg = document.getElementById('profileMsg');
     btn.innerHTML = 'Saving…'; btn.disabled = true;
+    const phoneInput = document.getElementById('p_phone');
     const d = await apiCall('../api/user.php','update_profile',{
         name: document.getElementById('p_name').value,
         email: document.getElementById('p_email').value,
@@ -1259,7 +1267,8 @@ document.getElementById('profileForm')?.addEventListener('submit', async e => {
         alt_contact: document.getElementById('p_alt').value,
         market_id: document.getElementById('p_market').value,
         lat: document.getElementById('p_lat').value,
-        lng: document.getElementById('p_lng').value
+        lng: document.getElementById('p_lng').value,
+        phone: phoneInput ? phoneInput.value.replace(/\D/g, '') : ''
     });
     msg.textContent = d.message; msg.style.display='block';
     msg.style.color = d.success?'var(--success)':'var(--danger)';

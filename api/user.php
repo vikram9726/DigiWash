@@ -53,9 +53,38 @@ if ($action === 'update_profile') {
         respond(false, 'Please select your Service Market Zone or Detect Location.');
     }
 
+    // Allow Google users to set their phone number
+    $newPhone = null;
+    $phoneInput = preg_replace('/[^0-9]/', '', $data['phone'] ?? '');
+    $currentUser = $pdo->prepare("SELECT phone FROM users WHERE id = ?");
+    $currentUser->execute([$userId]);
+    $currentPhone = $currentUser->fetchColumn();
+
+    if (!empty($phoneInput)) {
+        if (strlen($phoneInput) !== 10) {
+            respond(false, 'Phone number must be exactly 10 digits.');
+        }
+        // Only allow update if current phone is a placeholder
+        if (strpos($currentPhone, 'GOOGLE_PENDING_') === 0) {
+            // Check if phone is already taken by another user
+            $check = $pdo->prepare("SELECT id FROM users WHERE phone = ? AND id != ?");
+            $check->execute([$phoneInput, $userId]);
+            if ($check->fetch()) {
+                respond(false, 'This phone number is already registered with another account.');
+            }
+            $newPhone = $phoneInput;
+        }
+    }
+
     try {
-        $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, shop_address = ?, alt_contact = ?, market_id = ?, lat = ?, lng = ? WHERE id = ?");
-        $stmt->execute([$name, $email, $shopAddress, $altContact ?: null, $marketId, $lat, $lng, $userId]);
+        if ($newPhone) {
+            $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, shop_address = ?, alt_contact = ?, market_id = ?, lat = ?, lng = ?, phone = ? WHERE id = ?");
+            $stmt->execute([$name, $email, $shopAddress, $altContact ?: null, $marketId, $lat, $lng, $newPhone, $userId]);
+            $_SESSION['phone'] = $newPhone;
+        } else {
+            $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, shop_address = ?, alt_contact = ?, market_id = ?, lat = ?, lng = ? WHERE id = ?");
+            $stmt->execute([$name, $email, $shopAddress, $altContact ?: null, $marketId, $lat, $lng, $userId]);
+        }
         respond(true, 'Profile updated successfully!');
     } catch (\Exception $e) {
         respond(false, 'Failed to update profile. Error: ' . $e->getMessage());
