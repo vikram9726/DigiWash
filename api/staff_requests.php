@@ -14,8 +14,14 @@ $isJson = str_contains($ct, 'application/json');
 $body   = $isJson ? (json_decode(file_get_contents('php://input'), true) ?? []) : [];
 $action = $body['action'] ?? $_POST['action'] ?? '';
 
-$headers    = getallheaders();
-$csrfToken  = $headers['X-CSRF-Token'] ?? $body['csrf_token'] ?? $_POST['csrf_token'] ?? '';
+$headers = function_exists('getallheaders') ? getallheaders() : [];
+$csrfToken = $headers['X-CSRF-Token']
+    ?? $headers['x-csrf-token']
+    ?? $_SERVER['HTTP_X_CSRF_TOKEN']
+    ?? (is_array($data ?? null) ? ($data['csrf_token'] ?? '') : '')
+    ?? (is_array($body ?? null) ? ($body['csrf_token'] ?? '') : '')
+    ?? $_POST['csrf_token']
+    ?? '';
 $serverCsrf = $_SESSION['csrf_token'] ?? '';
 if (empty($serverCsrf) || !hash_equals($serverCsrf, $csrfToken)) respond(false, 'Invalid CSRF token.');
 

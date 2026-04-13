@@ -20,8 +20,14 @@ $action = $data['action'] ?? $_POST['action'] ?? '';
 $userId = $_SESSION['user_id'];
 
 // CSRF Protection Check
-$headers = getallheaders();
-$csrfToken = $headers['X-CSRF-Token'] ?? $data['csrf_token'] ?? $_POST['csrf_token'] ?? '';
+$headers = function_exists('getallheaders') ? getallheaders() : [];
+$csrfToken = $headers['X-CSRF-Token']
+    ?? $headers['x-csrf-token']
+    ?? $_SERVER['HTTP_X_CSRF_TOKEN']
+    ?? (is_array($data ?? null) ? ($data['csrf_token'] ?? '') : '')
+    ?? (is_array($body ?? null) ? ($body['csrf_token'] ?? '') : '')
+    ?? $_POST['csrf_token']
+    ?? '';
 if (!hash_equals($_SESSION['csrf_token'], $csrfToken)) {
     respond(false, 'Invalid CSRF token. Request denied.');
 }
