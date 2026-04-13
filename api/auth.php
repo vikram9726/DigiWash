@@ -57,7 +57,6 @@ if ($action === 'firebase_login') {
 
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
 
     if ($httpCode !== 200 || !$response) {
         respond(false, 'Invalid or expired Firebase token.');
@@ -71,10 +70,17 @@ if ($action === 'firebase_login') {
     $fbUser = $fbData['users'][0];
     $uid = $fbUser['localId'];
 
-    // Some google accounts don't have phone numbers tied, so we fallback to parsing the payload or standardizing later
-    $phone = isset($fbUser['phoneNumber']) ? 
-        str_replace('+', '', $fbUser['phoneNumber']) : // Strip + if present
-        htmlspecialchars(strip_tags($data['phone'] ?? ''), ENT_QUOTES, 'UTF-8'); // Fallback to provided payload
+    // Firebase phone: '+919726232915' → strip + and country code 91 → '9726232915'
+    $rawPhone = $fbUser['phoneNumber'] ?? '';
+    if (!empty($rawPhone)) {
+        $rawPhone = ltrim($rawPhone, '+');   // remove leading +
+        if (strlen($rawPhone) === 12 && substr($rawPhone, 0, 2) === '91') {
+            $rawPhone = substr($rawPhone, 2); // strip India 91 → 10 digits
+        }
+        $phone = preg_replace('/[^0-9]/', '', $rawPhone);
+    } else {
+        $phone = preg_replace('/[^0-9]/', '', $data['phone'] ?? '');
+    }
 
     $email = $fbUser['email'] ?? filter_var($data['email'] ?? '', FILTER_SANITIZE_EMAIL);
     $name = $fbUser['displayName'] ?? htmlspecialchars(strip_tags($data['name'] ?? ''), ENT_QUOTES, 'UTF-8');
