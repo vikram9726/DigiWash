@@ -21,10 +21,16 @@ $action = $data['action'] ?? '';
 
 // CSRF Protection Check for authenticated actions (like logout)
 if ($action !== 'firebase_login' && $action !== 'login' && $action !== 'dummy_login') {
-    $headers = getallheaders();
-    $csrfToken = $headers['X-CSRF-Token'] ?? (is_array($data) ? ($data['csrf_token'] ?? '') : '') ?? $_POST['csrf_token'] ?? '';
+    // getallheaders() can fail on some Apache/Hostinger setups — fall back to $_SERVER
+    $headers = function_exists('getallheaders') ? getallheaders() : [];
+    $csrfToken = $headers['X-CSRF-Token']
+        ?? $headers['x-csrf-token']
+        ?? $_SERVER['HTTP_X_CSRF_TOKEN']
+        ?? (is_array($data) ? ($data['csrf_token'] ?? '') : '')
+        ?? $_POST['csrf_token']
+        ?? '';
 
-    if (!isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrfToken)) {
+    if (!isset($_SESSION['csrf_token']) || empty($csrfToken) || !hash_equals($_SESSION['csrf_token'], $csrfToken)) {
         respond(false, 'Invalid CSRF token. Request denied.');
     }
 }
