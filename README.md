@@ -22,7 +22,6 @@
 - Coupon code application at checkout
 - Order cancellation with reason tracking
 - Return requests with photo upload
-- **Weekly subscription** management
 - Push notifications via Firebase Cloud Messaging (FCM)
 - PDF invoice generation and download (via DomPDF)
 

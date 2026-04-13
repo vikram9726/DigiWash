@@ -1,5 +1,5 @@
 <?php require 'public_header.php'; ?>
-<main class="max-w-4xl mx-auto px-4 py-16">
+<main class="max-w-4xl mx-auto px-4 py-8">
     <div class="text-center mb-16">
         <h1 class="text-4xl font-black text-slate-900 mb-4">About <span class="text-indigo-600">DigiWash</span></h1>
         <p class="text-lg text-slate-600 max-w-2xl mx-auto">Modernizing laundry and textile care for a faster, cleaner, and more reliable India.</p>

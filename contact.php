@@ -1,5 +1,5 @@
 <?php require 'public_header.php'; ?>
-<main class="max-w-4xl mx-auto px-4 py-16">
+<main class="max-w-4xl mx-auto px-4 py-8">
     <div class="text-center mb-12">
         <h1 class="text-4xl font-black text-slate-900 mb-4">Contact Us</h1>
         <p class="text-lg text-slate-600">Have a question? We are here to help you.</p>

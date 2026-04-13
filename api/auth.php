@@ -98,7 +98,8 @@ if ($action === 'firebase_login') {
             $pdo->prepare("UPDATE users SET qr_code_hash = ? WHERE id = ?")->execute([$qrHash, $userId]);
         }
         catch (\Exception $e) {
-            respond(false, 'Failed to create account. ' . $e->getMessage());
+            error_log('Firebase signup error: ' . $e->getMessage());
+            respond(false, 'Failed to create account. Please try again.');
         }
     }
     else {

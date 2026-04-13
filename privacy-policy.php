@@ -1,5 +1,5 @@
 <?php require 'public_header.php'; ?>
-<main class="max-w-4xl mx-auto px-4 py-16">
+<main class="max-w-4xl mx-auto px-4 py-8">
     <h1 class="text-4xl font-black text-slate-900 mb-2">Privacy Policy</h1>
     <p class="text-slate-500 mb-8 font-semibold">Last Updated: March 2026</p>
 

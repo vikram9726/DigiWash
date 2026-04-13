@@ -1,0 +1,208 @@
+# 🧺 DigiWash — Product Requirements Document (PRD) & Development Guide
+
+## 1. Project Overview & Objectives
+**Name:** DigiWash
+**Type:** SaaS Laundry Management Platform & Marketplace
+**Objective:** To rebuild the existing PHP/MySQL DigiWash web application into a scalable, high-performance platform using modern JavaScript/TypeScript technologies. The platform serves local shopkeepers (Admin), delivery personnel (Delivery), and end consumers (Customers).
+
+## 2. Technology Stack Spec
+- **Backend API:** Node.js with Express.js (TypeScript recommended)
+- **Database:** PostgreSQL
+- **ORM:** Prisma
+- **Web Frontend (Customer/Admin Dashboard):** Next.js (App Router), React, Tailwind CSS, shadcn/ui
+- **Mobile Frontend (Customer/Delivery App):** React Native (Expo)
+- **Authentication:** Firebase Authentication (Phone Auth/OTP & Google OAuth)
+- **Payments Gateway:** Razorpay
+- **Notifications:** Firebase Cloud Messaging (FCM)
+- **PDF Generation:** Puppeteer or internal React-PDF
+- **File Storage:** AWS S3 or Firebase Storage (for product images & return proofs)
+
+---
+
+## 3. Core Modules & Features
+
+### A. Authentication Module (Shared)
+- Firebase Phone OTP login for all roles.
+- Google OAuth login for customers.
+- Role-Based Access Control (RBAC): `ADMIN`, `DELIVERY`, `CUSTOMER`.
+- JWT session management via Next.js backend/Node.js.
+
+### B. Customer Module (Next.js Web + React Native App)
+- **Home/Dashboard:** View active orders, completed orders, pending payments, and auto-order (subscription) status.
+- **Laundry Cart:** Select laundry packages/items, build cart, compute totals.
+- **Marketplace (Commerce):** Browse independent items (e.g., bedsheets priced by meter), add to cart, and checkout.
+- **Checkout & Payments:**
+  - Apply Coupons.
+  - Razorpay Online Payment integration.
+  - Cash on Delivery (COD).
+  - "Pay Later" integrations (credit limits with 4, 8, or 12 order thresholds).
+- **Order Tracking:** Real-time visibility of order lifecycle (`Pending` -> `Assigned` -> `Picked Up` -> `In Process` -> `Out For Delivery` -> `Delivered`).
+- **Returns:** Submit return requests with mandatory photo uploads.
+- **Contact/Support:** Send direct messages to staff/admins.
+
+### C. Delivery Module (React Native App)
+- **Online/Offline Toggle:** Mark availability for immediate assignment.
+- **Order Queue:** View system-assigned local orders based on geographic Market ID.
+- **Order Execution:** Move order status forward. Require PIN/OTP from customer for final delivery verification, or allow bypass with a delivery photo.
+- **Order Release:** Reject/Cancel an assigned order to return it to the queue.
+
+### D. Admin Module (Next.js Web Dashboard)
+- **Analytics Overview:** Revenue charts, active user counts, delivery driver load.
+- **Order Management:** View and update all active laundry and marketplace orders.
+- **Marketplace Catalog:** CRUD operations for marketplace products with multi-variant pricing.
+- **Laundry Service Catalog:** Define base services and dimensional pricing (meter/kg).
+- **User Management & Pay Later:** Approve or reject Pay Later requests from customers.
+- **Market Zones:** Manage delivery geographic zones (lat/lng/radius).
+- **Coupon & Marketing:** Generate promo codes with usage limits.
+- **Support:** Answer contact form queries.
+
+---
+
+## 4. Prisma Database Schema (PostgreSQL)
+Below is the core architectural conceptualization for `schema.prisma`:
+
+```prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  DELIVERY
+  CUSTOMER
+}
+
+enum OrderStatus {
+  PENDING
+  ASSIGNED
+  PICKED_UP
+  IN_PROCESS
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+model User {
+  id               Int      @id @default(autoincrement())
+  phone            String   @unique
+  firebaseUid      String?  @unique
+  role             Role     @default(CUSTOMER)
+  name             String?
+  address          String?
+  email            String?
+  lat              Float?
+  lng              Float?
+  currentOrders    Int      @default(0)
+  isOnline         Boolean  @default(true)
+  payLaterPlan     String   @default("NONE")
+  payLaterStatus   String   @default("locked")
+  marketId         Int?
+  Market           Market?  @relation(fields: [marketId], references: [id])
+  Orders           Order[]
+  Deliveries       Order[]  @relation("DeliveryBoy")
+}
+
+model Market {
+  id        Int     @id @default(autoincrement())
+  name      String
+  lat       Float
+  lng       Float
+  radiusKm  Float
+  Users     User[]
+}
+
+model Order {
+  id             Int          @id @default(autoincrement())
+  userId         Int
+  deliveryId     Int?
+  marketId       Int?
+  status         OrderStatus  @default(PENDING)
+  totalAmount    Float        @default(0.0)
+  paymentStatus  String       @default("remaining")
+  instructions   String?
+  createdAt      DateTime     @default(now())
+  
+  User           User         @relation(fields: [userId], references: [id])
+  Delivery       User?        @relation("DeliveryBoy", fields: [deliveryId], references: [id])
+  Items          OrderItem[]
+  Payments       Payment[]
+}
+
+model OrderItem {
+  id             Int     @id @default(autoincrement())
+  orderId        Int
+  productName    String
+  quantity       Int
+  price          Float
+  lineTotal      Float
+  Order          Order   @relation(fields: [orderId], references: [id])
+}
+
+model Payment {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  orderId        Int
+  paymentMode    String
+  status         String
+  amount         Float
+  rzpOrderId     String?
+  rzpPaymentId   String?
+  Order          Order    @relation(fields: [orderId], references: [id])
+}
+```
+
+---
+
+## 5. Step-by-Step Development Plan
+
+### Step 1: Backend Infrastructure & Database Setup
+1. Initialize a Node.js/Express (or NestJS) TypeScript project.
+2. Install Prisma CLI (`npm i -D prisma` and `npx prisma init`).
+3. Define the full schema in `schema.prisma` mapped exactly to the entities above.
+4. Run `npx prisma migrate dev` to create the PostgreSQL tables.
+5. Create seed scripts (`seed.ts`) to populate default Admin user, Markets, and base catalog items.
+
+### Step 2: Authentication & Security APIs
+1. Set up Firebase Admin SDK in Node.js.
+2. Create `/api/auth/verify-token` endpoint: Receives Firebase ID token from frontend, verifies it using Admin SDK, checks if user exists in Database.
+3. If new, create `User` record.
+4. Issue a secure HTTP-only JWT matching the User ID and Role.
+5. Implement Express middleware `authenticate` and `authorizeRole(['ADMIN'])` to protect subsequent routes.
+
+### Step 3: Core Laundry & Marketplace APIs
+1. **Catalog Module:** Build GET/POST routes for Laundry Services and Marketplace Products.
+2. **Order Module:** Build `POST /api/orders` to accept cart data, validate coupons, enforce Pay Later limitations, calculate final pricing, and save `Order` & `OrderItems` inside a Prisma Transaction.
+3. **Payments Module:** Integrate Razorpay SDK in Node.js. Create an endpoint to generate a Razorpay Order ID before checkout. Create a webhook/verification endpoint for signature validation (`crypto.createHmac`) upon successful frontend checkout.
+4. **Geospatial & Delivery Assignment:** Build logic in the Order creation flow to find the nearest `DELIVERY` user where `isOnline=true` based on lat/lng and `currentOrders` load.
+
+### Step 4: Next.js Frontend Development (Web Portal)
+1. Initialize Next.js project: `npx create-next-app@latest digiwash-web`.
+2. Configure Tailwind CSS and add shared UI components via `shadcn/ui`.
+3. Set up Firebase JS SDK for authentication (Phone Auth UI).
+4. **Admin Panel (`/admin/*`):** Build layouts with sidebars. Implement tables with pagination to manage Users, Orders, Products, and Markets utilizing data fetched from Express APIs.
+5. **Customer Portal (`/dashboard/*`):** Build responsive web dashboards for viewing previous transactions, clearing pending Pay Later dues (Razorpay UI), and requesting returns.
+6. **Public Pages:** Create SEO-friendly Landing, Privacy, Terms, and Contact pages for compliance.
+
+### Step 5: React Native Mobile App Development
+1. Initialize Expo project: `npx create-expo-app digiwash-mobile`.
+2. Configure React Navigation (Stack and Bottom Tabs).
+3. **Auth Flow:** Implement Firebase Phone Auth for React Native.
+4. **Customer App Space:** Build native UI for browsing the laundry catalog, marketplace, managing cart state (Zustand/Redux), and placing orders. Implement native Razorpay module.
+5. **Delivery App Space:** Build a streamlined driver interface: a toggle button for Online/Offline, a queue view of assigned orders, an active order view with map/routing buttons, and PIN verification modal to mark orders `DELIVERED`.
+
+### Step 6: Notifications & Cron Jobs
+1. **Push Notifications:** Configure React Native app to request FCM tokens. Store physical device tokens in the `User` DB table. Set up Node.js to trigger `firebase-admin` notification sends on order status updates.
+2. **Cron Jobs:** Set up Node.js `node-cron` package to run daily background tasks (e.g., executing Auto-Order subscriptions at set intervals, automatically updating stale "Pending Payment" orders to "Cancelled").
+
+### Step 7: Testing, CI/CD, and Deployment
+1. **Deployment Architecture:**
+   - Database: Render, Supabase, or AWS RDS (PostgreSQL).
+   - Backend API: Railway, Render, or AWS EC2.
+   - Web Frontend: Vercel (Next.js optimized).
+2. **Environment Variables:** Map `.env` properly across all services (Razorpay Keys, DB URLs, Firebase credentials).
+3. **App Stores:** Build production APK/AAB and iOS IPA via Expo EAS Build and deploy to Google Play Store / Apple App Store.

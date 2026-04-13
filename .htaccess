@@ -1,0 +1,101 @@
+# ═══════════════════════════════════════════════════════════
+#  DigiWash — Production .htaccess
+#  Hostinger shared hosting compatible (Apache 2.4)
+# ═══════════════════════════════════════════════════════════
+
+# ── Disable directory listing ─────────────────────────────
+Options -Indexes
+ServerSignature Off
+
+# ── Block direct access to sensitive files ───────────────
+<FilesMatch "(^\.env$|\.json$|schema.*\.sql$|composer\.(json|lock)$|\.git|\.md$|\.txt$|schema_full\.sql$)">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# ── Allow firebase-messaging-sw.js (must be public) ──────
+<Files "firebase-messaging-sw.js">
+    Order Allow,Deny
+    Allow from all
+</Files>
+
+# ── Block the legacy /auth/ directory ────────────────────
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Block auth/ legacy directory (dead code)
+    RewriteRule ^auth/.*$ - [F,L]
+
+    # Force HTTPS (enable on Hostinger after SSL is active)
+    # RewriteCond %{HTTPS} off
+    # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+</IfModule>
+
+# ── PHP settings (belt-and-suspenders) ───────────────────
+<IfModule mod_php.c>
+    php_flag display_errors Off
+    php_flag log_errors On
+    php_value max_execution_time 60
+    php_value memory_limit 256M
+    php_value upload_max_filesize 10M
+    php_value post_max_size 12M
+    php_value session.cookie_httponly 1
+    php_value session.use_only_cookies 1
+    php_value session.cookie_samesite Strict
+</IfModule>
+
+# ── Gzip Compression ─────────────────────────────────────
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/css
+    AddOutputFilterByType DEFLATE application/javascript application/json
+    AddOutputFilterByType DEFLATE image/svg+xml application/xml
+</IfModule>
+
+# ── Browser Caching ──────────────────────────────────────
+<IfModule mod_expires.c>
+    ExpiresActive On
+
+    # CSS & JS — 30 days
+    ExpiresByType text/css                  "access plus 30 days"
+    ExpiresByType application/javascript    "access plus 30 days"
+
+    # Images — 60 days
+    ExpiresByType image/png                 "access plus 60 days"
+    ExpiresByType image/jpeg                "access plus 60 days"
+    ExpiresByType image/gif                 "access plus 60 days"
+    ExpiresByType image/webp                "access plus 60 days"
+    ExpiresByType image/svg+xml             "access plus 60 days"
+    ExpiresByType image/x-icon              "access plus 1 year"
+
+    # Fonts — 1 year
+    ExpiresByType font/woff2                "access plus 1 year"
+    ExpiresByType font/woff                 "access plus 1 year"
+
+    # HTML / PHP — no cache (always fresh)
+    ExpiresByType text/html                 "access plus 0 seconds"
+</IfModule>
+
+# ── Security Headers ─────────────────────────────────────
+<IfModule mod_headers.c>
+    Header always set X-Frame-Options "DENY"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(self), camera=(), microphone=()"
+
+    # Cache-Control for static assets
+    <FilesMatch "\.(css|js|png|jpg|jpeg|gif|webp|svg|ico|woff|woff2)$">
+        Header set Cache-Control "public, max-age=2592000, immutable"
+    </FilesMatch>
+
+    # No cache for PHP pages
+    <FilesMatch "\.php$">
+        Header set Cache-Control "no-store, no-cache, must-revalidate"
+        Header set Pragma "no-cache"
+    </FilesMatch>
+</IfModule>
+
+# ── Protect uploads directory — no PHP execution ─────────
+<IfModule mod_rewrite.c>
+    RewriteRule ^uploads/.*\.(php|php5|phtml|phar)$ - [F,L]
+</IfModule>

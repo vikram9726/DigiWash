@@ -32,10 +32,8 @@ function loadEnv($path) {
     }
 }
 
-// Load environment variables from the root directory
-loadEnv(dirname(__DIR__) . '/DigiWash/.env'); // Adjust path based on project root. Assuming config.php is in DigiWash/
-// Fallback if the path logic above is off
-if(!isset($_ENV['DB_HOST'])) { loadEnv(__DIR__ . '/.env'); }
+// Load environment variables — config.php is always in the project root
+loadEnv(__DIR__ . '/.env');
 
 // Database Configuration from Environment
 $host = getenv('DB_HOST') ?: '127.0.0.1';
@@ -103,11 +101,16 @@ function getGoogleAccessToken() {
     }
 
     // Load service account JSON
-    $saPath = getenv('FIREBASE_SERVICE_ACCOUNT_JSON');
-    if (!$saPath) { error_log("FCM: FIREBASE_SERVICE_ACCOUNT_JSON env not set"); return null; }
-    
-    // Resolve relative to project root
-    $fullPath = __DIR__ . '/' . $saPath;
+    // SECURITY: FIREBASE_SA_PATH should be an absolute path OUTSIDE public_html on Hostinger
+    // e.g. /home/u123456789/private/digiwash-firebase-adminsdk.json
+    // On local XAMPP, file sits in project root (acceptable for dev only)
+    $saPath = getenv('FIREBASE_SA_PATH') ?: getenv('FIREBASE_SERVICE_ACCOUNT_JSON');
+    if (!$saPath) { error_log("FCM: FIREBASE_SA_PATH env not set"); return null; }
+
+    // If absolute path provided, use as-is; otherwise resolve relative to project root (dev fallback)
+    $fullPath = (strpos($saPath, DIRECTORY_SEPARATOR) === 0 || preg_match('/^[A-Za-z]:[\\\\\/]/', $saPath))
+        ? $saPath
+        : __DIR__ . '/' . $saPath;
     if (!file_exists($fullPath)) { error_log("FCM: Service account file not found: $fullPath"); return null; }
     
     $sa = json_decode(file_get_contents($fullPath), true);
