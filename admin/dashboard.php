@@ -646,7 +646,7 @@ async function api(action, payload = {}) {
         const r = await fetch('../api/admin.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-            body: JSON.stringify({ action, ...payload })
+            body: JSON.stringify({ action, csrf_token: csrf, ...payload })
         });
         return await r.json();
     } catch(e) { return { success: false, message: 'Server error' }; }
@@ -1573,7 +1573,7 @@ async function updateMessage(id, status) {
         const r = await fetch('../api/contact.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-            body: JSON.stringify({ action: 'update_status', id, status })
+            body: JSON.stringify({ action: 'update_status', csrf_token: csrf, id, status })
         });
         const d = await r.json();
         if (d.success) { toast('success', 'Message', 'Status updated.'); loadMessages('all'); loadMessageBadge(); }
@@ -1587,7 +1587,7 @@ async function deleteMessage(id) {
         const r = await fetch('../api/contact.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-            body: JSON.stringify({ action: 'delete', id })
+            body: JSON.stringify({ action: 'delete', csrf_token: csrf, id })
         });
         const d = await r.json();
         if (d.success) { toast('success', 'Deleted', 'Message removed.'); loadMessages('all'); loadMessageBadge(); }

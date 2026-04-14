@@ -111,8 +111,8 @@ if ($action === 'create_order') {
     $stmt = $pdo->prepare("SELECT name, shop_address, pay_later_plan, pay_later_status, market_id, lat, lng FROM users WHERE id = ?");
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
-    if (empty($user['name']) || empty($user['shop_address']) || empty($user['market_id']) || empty($user['lat']) || empty($user['lng'])) {
-        respond(false, 'Please complete your profile and "Detect Location" to set your precise coordinates before creating an order.');
+    if (empty($user['name']) || empty($user['shop_address']) || empty($user['market_id'])) {
+        respond(false, 'Please complete your profile details and set your Service Market Zone before creating an order.');
     }
 
     $paymentMode = in_array(strtoupper($data['payment_mode'] ?? 'COD'), ['COD', 'ONLINE', 'PAY_LATER_4', 'PAY_LATER_8', 'PAY_LATER_12']) ? strtoupper($data['payment_mode']) : 'COD';

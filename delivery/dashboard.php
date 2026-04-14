@@ -326,7 +326,7 @@ async function api(action, payload = {}) {
         const r = await fetch(dApi, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-            body: JSON.stringify({ action, ...payload })
+            body: JSON.stringify({ action, csrf_token: csrf, ...payload })
         });
         return await r.json();
     } catch(e) { return { success: false, message: 'Server error' }; }
@@ -561,7 +561,7 @@ async function submitReady() {
         const r = await fetch('../api/delivery.php', {
             method: 'POST',
             headers: { 'Content-Type':'application/json', 'X-CSRF-Token': csrf },
-            body: JSON.stringify({ action: 'mark_ready', order_id: orderId })
+            body: JSON.stringify({ action: 'mark_ready', csrf_token: csrf, order_id: orderId })
         });
         const d = await r.json();
         const msg = document.getElementById('readyMsg');
@@ -608,7 +608,7 @@ async function submitOTP() {
             const r = await fetch('../api/update_marketplace_status.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-                body: JSON.stringify({ action:'update_status', order_id: orderId, status: 'delivered', otp })
+                body: JSON.stringify({ action:'update_status', csrf_token: csrf, order_id: orderId, status: 'delivered', otp })
             });
             const d = await r.json();
             msg.textContent = d.message; msg.style.color = d.success ? '#10b981' : '#ef4444'; msg.style.display = 'block';
@@ -644,6 +644,7 @@ async function submitBypass() {
     fd.append('order_id', orderId);
     fd.append('staff_number', staffNum);
     fd.append('staff_photo', photoFile);
+    fd.append('csrf_token', csrf);
     try {
         const r = await fetch(dApi, { method:'POST', headers:{'X-CSRF-Token':csrf}, body: fd });
         const d = await r.json();
@@ -699,7 +700,7 @@ document.querySelectorAll('.modal-overlay').forEach(m => {
 
 // ── Logout ──
 document.getElementById('logoutBtn').addEventListener('click', async () => {
-    await fetch('../api/auth.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:JSON.stringify({action:'logout'}) });
+    await fetch('../api/auth.php', { method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:JSON.stringify({action:'logout', csrf_token: csrf}) });
     window.location.href = '../index.php';
 });
 

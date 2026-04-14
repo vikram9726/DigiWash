@@ -349,9 +349,67 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
                             <label>Email</label>
                             <input type="email" id="p_email" class="form-control" value="<?= htmlspecialchars($user['email']??'') ?>">
                         </div>
+                        <?php
+                            $shopAddr = current(array_filter([$user['shop_address']??'']));
+                            $parts = [
+                                'shopName' => '', 'flatNo' => '', 'building' => '', 'locality' => '',
+                                'city' => '', 'state' => '', 'pincode' => '', 'landmark' => '', 'instructions' => ''
+                            ];
+                            if ($shopAddr) {
+                                foreach(explode("\n", $shopAddr) as $line) {
+                                    $line = trim($line);
+                                    if (strpos($line, 'Shop/Business: ') === 0) $parts['shopName'] = substr($line, 15);
+                                    elseif (strpos($line, 'Flat/Shop No: ') === 0) $parts['flatNo'] = substr($line, 14);
+                                    elseif (strpos($line, 'Building: ') === 0) $parts['building'] = substr($line, 10);
+                                    elseif (strpos($line, 'Locality: ') === 0) $parts['locality'] = substr($line, 10);
+                                    elseif (strpos($line, 'City: ') === 0) $parts['city'] = substr($line, 6);
+                                    elseif (strpos($line, 'State: ') === 0) $parts['state'] = substr($line, 7);
+                                    elseif (strpos($line, 'Pincode: ') === 0) $parts['pincode'] = substr($line, 9);
+                                    elseif (strpos($line, 'Landmark: ') === 0) $parts['landmark'] = substr($line, 10);
+                                    elseif (strpos($line, 'Instructions: ') === 0) $parts['instructions'] = substr($line, 14);
+                                }
+                                if (empty($parts['shopName']) && !empty($shopAddr)) {
+                                    $parts['shopName'] = $shopAddr; // Legacy string fallback
+                                }
+                            }
+                        ?>
                         <div class="form-group">
-                            <label>Shop / Pickup Address *</label>
-                            <textarea id="p_address" class="form-control" rows="3" required><?= htmlspecialchars($user['shop_address']??'') ?></textarea>
+                            <label>Shop / Business Name *</label>
+                            <input type="text" id="p_shopName" class="form-control" value="<?= htmlspecialchars($parts['shopName']) ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Flat / Shop No / Floor *</label>
+                            <input type="text" id="p_flatNo" class="form-control" value="<?= htmlspecialchars($parts['flatNo']) ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Building / Street Name *</label>
+                            <input type="text" id="p_building" class="form-control" value="<?= htmlspecialchars($parts['building']) ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Area / Locality *</label>
+                            <input type="text" id="p_locality" class="form-control" value="<?= htmlspecialchars($parts['locality']) ?>" required>
+                        </div>
+                        <div style="display:flex; gap:10px; margin-bottom:1rem;">
+                            <div style="flex:1;">
+                                <label style="display:block;margin-bottom:.5rem;font-weight:700;font-size:.82rem;color:var(--text);">City *</label>
+                                <input type="text" id="p_city" class="form-control" value="<?= htmlspecialchars($parts['city']) ?>" required>
+                            </div>
+                            <div style="flex:1;">
+                                <label style="display:block;margin-bottom:.5rem;font-weight:700;font-size:.82rem;color:var(--text);">State *</label>
+                                <input type="text" id="p_state" class="form-control" value="<?= htmlspecialchars($parts['state']) ?>" required>
+                            </div>
+                            <div style="flex:1;">
+                                <label style="display:block;margin-bottom:.5rem;font-weight:700;font-size:.82rem;color:var(--text);">Pincode *</label>
+                                <input type="text" id="p_pincode" class="form-control" value="<?= htmlspecialchars($parts['pincode']) ?>" required>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Landmark (Near temple, gate, etc) *</label>
+                            <input type="text" id="p_landmark" class="form-control" value="<?= htmlspecialchars($parts['landmark']) ?>" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Pickup Instructions <span style="font-weight:500;color:var(--muted);">(Optional)</span></label>
+                            <input type="text" id="p_instructions" class="form-control" placeholder="e.g. Call when near gate" value="<?= htmlspecialchars($parts['instructions']) ?>">
                         </div>
                         <div class="form-group">
                             <label>Service Market Zone *</label>
@@ -362,13 +420,8 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
                                         <option value="<?= $m['id'] ?>" <?= ($user['market_id']==$m['id'])?'selected':'' ?>><?= htmlspecialchars($m['name']) ?></option>
                                     <?php endforeach; ?>
                                 </select>
-                                <button type="button" class="btn btn-outline" onclick="detectLocation()" style="padding:0 1rem;" title="Auto-detect via GPS">
-                                    <i class="material-icons-outlined" style="font-size:1.1rem;vertical-align:middle;">my_location</i>
-                                </button>
                             </div>
-                            <div id="locStatus" style="font-size:0.75rem;color:var(--muted);margin-top:5px;"></div>
-                            <input type="hidden" id="p_lat" value="<?= htmlspecialchars($user['lat']??'') ?>">
-                            <input type="hidden" id="p_lng" value="<?= htmlspecialchars($user['lng']??'') ?>">
+                            <div id="locStatus" style="font-size:0.75rem;color:var(--muted);margin-top:5px;display:none;"></div>
                         </div>
                         <div class="form-group">
                             <label>Alternate Contact <span style="color:var(--muted);font-weight:500;">(Optional, 10 digits)</span></label>
@@ -1219,40 +1272,6 @@ async function initiatePayment(orderId, amount) {
 }
 
 // ── Profile form & Location ───────────────────────────────────
-function detectLocation() {
-    const locStatus = document.getElementById('locStatus');
-    const latInp = document.getElementById('p_lat');
-    const lngInp = document.getElementById('p_lng');
-    const marketSel = document.getElementById('p_market');
-
-    if (!navigator.geolocation) {
-        locStatus.textContent = "Geolocation is not supported by your browser.";
-        locStatus.style.color = "var(--danger)";
-        return;
-    }
-
-    locStatus.textContent = "Locating… Please allow access.";
-    locStatus.style.color = "var(--primary)";
-
-    navigator.geolocation.getCurrentPosition(async (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
-        latInp.value = lat;
-        lngInp.value = lng;
-        locStatus.textContent = "Location attached successfully! (" + lat.toFixed(4) + ", " + lng.toFixed(4) + ")";
-        locStatus.style.color = "var(--success)";
-
-    }, (err) => {
-        let errStr = err.message;
-        if(err.code === err.PERMISSION_DENIED) errStr = "Permission denied. Please enable location services.";
-        locStatus.textContent = "Failed to get location: " + errStr;
-        locStatus.style.color = "var(--danger)";
-    }, {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0
-    });
-}
 
 document.getElementById('profileForm')?.addEventListener('submit', async e => {
     e.preventDefault();
@@ -1263,11 +1282,19 @@ document.getElementById('profileForm')?.addEventListener('submit', async e => {
     const d = await apiCall('../api/user.php','update_profile',{
         name: document.getElementById('p_name').value,
         email: document.getElementById('p_email').value,
-        shop_address: document.getElementById('p_address').value,
+        shop_address: `Shop/Business: ${document.getElementById('p_shopName').value.trim()}` + '\n' +
+                      `Flat/Shop No: ${document.getElementById('p_flatNo').value.trim()}` + '\n' +
+                      `Building: ${document.getElementById('p_building').value.trim()}` + '\n' +
+                      `Locality: ${document.getElementById('p_locality').value.trim()}` + '\n' +
+                      `City: ${document.getElementById('p_city').value.trim()}` + '\n' +
+                      `State: ${document.getElementById('p_state').value.trim()}` + '\n' +
+                      `Pincode: ${document.getElementById('p_pincode').value.trim()}` + '\n' +
+                      `Landmark: ${document.getElementById('p_landmark').value.trim()}` + '\n' +
+                      `Instructions: ${document.getElementById('p_instructions').value.trim()}`,
         alt_contact: document.getElementById('p_alt').value,
         market_id: document.getElementById('p_market').value,
-        lat: document.getElementById('p_lat').value,
-        lng: document.getElementById('p_lng').value,
+        lat: '',
+        lng: '',
         phone: phoneInput ? phoneInput.value.replace(/\D/g, '') : ''
     });
     msg.textContent = d.message; msg.style.display='block';
@@ -1314,7 +1341,7 @@ document.getElementById('logoutBtn')?.addEventListener('click', async () => {
 // ── API helper ────────────────────────────────────────────────
 async function apiCall(url, action, payload = {}) {
     try {
-        const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken}, body:JSON.stringify({action,...payload}) });
+        const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken}, body:JSON.stringify({action, csrf_token: csrfToken, ...payload}) });
         if (!r.ok) return { success:false, message:`Server error (HTTP ${r.status})` };
         return await r.json();
     } catch(e) { console.error('apiCall error:', e); return { success:false, message:'Network error. Please check your connection.' }; }

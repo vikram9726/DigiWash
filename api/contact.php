@@ -89,6 +89,19 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     echo json_encode(['success' => false, 'message' => 'Unauthorized']); exit;
 }
 
+$headers = function_exists('getallheaders') ? getallheaders() : [];
+$csrfToken = $headers['X-CSRF-Token']
+    ?? $headers['x-csrf-token']
+    ?? $_SERVER['HTTP_X_CSRF_TOKEN']
+    ?? (is_array($data ?? null) ? ($data['csrf_token'] ?? '') : '')
+    ?? $_POST['csrf_token']
+    ?? '';
+
+if (!isset($_SESSION['csrf_token']) || empty($csrfToken) || !hash_equals($_SESSION['csrf_token'], $csrfToken)) {
+    echo json_encode(['success' => false, 'message' => 'Invalid CSRF token. Request denied.']); exit;
+}
+
+
 if ($postAction === 'update_status') {
     $id     = (int)($data['id'] ?? 0);
     $status = $data['status'] ?? '';

@@ -976,7 +976,7 @@ if ($isEligibleForPayLater) {
             payload.action = action;
             payload.csrf_token = csrfToken;
             try {
-                const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }, body: JSON.stringify(payload) });
                 return await res.json();
             } catch (e) { return { success: false, message: 'Server connection failed.' }; }
         }
