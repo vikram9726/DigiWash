@@ -503,6 +503,7 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
             <button class="btn btn-danger" style="flex:1;justify-content:center;" onclick="confirmCancelOrder()">Yes, Cancel</button>
             <button class="btn btn-ghost" style="flex:1;justify-content:center;" onclick="closeModal('cancelModal')">Keep Order</button>
         </div>
+    </div>
 </div>
 
 <!-- Refund Track Modal -->
