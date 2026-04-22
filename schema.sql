@@ -140,7 +140,7 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `pickup_address`      TEXT DEFAULT NULL,
   `status`              ENUM('pending','assigned','picked_up','in_process','out_for_delivery','delivered','cancelled') DEFAULT 'pending',
   `total_amount`        DECIMAL(10,2) DEFAULT 0.00,
-  `payment_status`      ENUM('remaining','completed') DEFAULT 'remaining',
+  `payment_status`      ENUM('remaining','completed','refunded') DEFAULT 'remaining',
   `instructions`        TEXT DEFAULT NULL,
   `cancellation_reason` TEXT DEFAULT NULL,
   `delivery_otp`        VARCHAR(6) DEFAULT NULL,
@@ -357,6 +357,20 @@ CREATE TABLE IF NOT EXISTS `marketplace_order_items` (
   KEY `product_id` (`product_id`),
   CONSTRAINT `marketplace_order_items_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `marketplace_orders` (`id`) ON DELETE CASCADE,
   CONSTRAINT `marketplace_order_items_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `marketplace_products` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ── refund_audit_log ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `refund_audit_log` (
+  `id`           INT(11) NOT NULL AUTO_INCREMENT,
+  `user_id`      INT(11) NOT NULL,
+  `order_id`     INT(11) NOT NULL,
+  `action_taken` VARCHAR(100) NOT NULL COMMENT 'refund_processed|refund_rejected|order_cancelled_no_refund',
+  `note`         TEXT DEFAULT NULL,
+  `created_at`   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  KEY `order_id` (`order_id`),
+  KEY `idx_action` (`action_taken`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
