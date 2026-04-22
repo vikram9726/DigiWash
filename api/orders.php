@@ -382,9 +382,8 @@ if ($action === 'cancel_order') {
     $orderId = (int)($data['order_id'] ?? 0);
     if (!$orderId) respond(false, 'Invalid order ID.');
 
-    // ── 1. Validate ownership + eligibility ──────────────────────────────
-    $stmt = $pdo->prepare("SELECT o.status, o.delivery_id, o.total_amount
-                           FROM orders o WHERE o.id = ? AND o.user_id = ?");
+    // Validate ownership
+    $stmt = $pdo->prepare("SELECT status, delivery_id FROM orders WHERE id = ? AND user_id = ?");
     $stmt->execute([$orderId, $userId]);
     $order = $stmt->fetch();
 
@@ -392,161 +391,60 @@ if ($action === 'cancel_order') {
         respond(false, 'Order not found.');
     }
 
-    // Refund only for pre-pickup statuses
-    $refundEligibleStatuses = ['pending', 'assigned'];
-    $notEligibleStatuses    = ['picked_up', 'in_process', 'out_for_delivery', 'delivered'];
-
-    if (in_array($order['status'], $notEligibleStatuses)) {
-        // Log the rejected attempt
-        try {
-            $pdo->prepare("INSERT INTO refund_audit_log (user_id, order_id, action_taken, note, created_at)
-                           VALUES (?, ?, 'refund_rejected', 'Refund not applicable after pickup', NOW())")
-                ->execute([$userId, $orderId]);
-        } catch (\Exception $e) {}
-
-        echo json_encode([
-            'status'        => 'failed',
-            'message'       => 'Refund not applicable after pickup',
-            'refund_amount' => 0,
-            'refund_id'     => null
-        ]);
-        exit;
-    }
-
-    if (!in_array($order['status'], $refundEligibleStatuses)) {
-        respond(false, 'Order cannot be cancelled in its current state.');
+    // Allow cancel only if not yet physically picked up
+    $cancellableStatuses = ['pending', 'assigned'];
+    if (!in_array($order['status'], $cancellableStatuses)) {
+        respond(false, 'Cannot cancel — your order has already been picked up by the delivery partner.');
     }
 
     try {
         $pdo->beginTransaction();
 
-        // ── 2. Cancel order + release delivery partner ───────────────────
         $pdo->prepare("UPDATE orders SET status = 'cancelled', delivery_id = NULL, updated_at = NOW() WHERE id = ?")
             ->execute([$orderId]);
 
+        // Release delivery partner load counter
         if ($order['delivery_id']) {
             $pdo->prepare("UPDATE users SET current_orders = GREATEST(0, current_orders - 1) WHERE id = ?")
                 ->execute([$order['delivery_id']]);
         }
 
-        // ── 3. Fetch payment record ──────────────────────────────────────
-        $payStmt = $pdo->prepare(
-            "SELECT id, amount, rzp_payment_id, status FROM payments
-             WHERE order_id = ? LIMIT 1"
-        );
+        // Fetch payment record
+        $payStmt = $pdo->prepare("SELECT id, amount, rzp_payment_id, status FROM payments WHERE order_id = ? LIMIT 1");
         $payStmt->execute([$orderId]);
         $payment = $payStmt->fetch();
 
         $refundMessage = 'Your order has been successfully cancelled.';
-        $refundId      = null;
-        $refundAmount  = 0;
 
         if ($payment && $payment['status'] === 'completed' && !empty($payment['rzp_payment_id'])) {
 
-            // ── 4. Prevent duplicate refund ──────────────────────────────
-            $dupCheck = $pdo->prepare(
-                "SELECT id FROM refunds WHERE order_id = ? AND status IN ('requested','processed') LIMIT 1"
-            );
+            // Prevent duplicate refund request
+            $dupCheck = $pdo->prepare("SELECT id FROM refunds WHERE order_id = ? AND status IN ('requested','processed') LIMIT 1");
             $dupCheck->execute([$orderId]);
-            $existingRefund = $dupCheck->fetch();
 
-            if ($existingRefund) {
-                $pdo->rollBack();
-                echo json_encode([
-                    'status'        => 'failed',
-                    'message'       => 'A refund for this order has already been initiated.',
-                    'refund_amount' => 0,
-                    'refund_id'     => null
-                ]);
-                exit;
-            }
-
-            // ── 5. Validate payment_id exists ────────────────────────────
-            $rzpId  = getenv('RAZORPAY_KEY_ID');
-            $rzpSec = getenv('RAZORPAY_KEY_SECRET');
-            $auth   = base64_encode("$rzpId:$rzpSec");
-
-            // Verify payment is captured on Razorpay before refunding
-            $chVerify = curl_init("https://api.razorpay.com/v1/payments/{$payment['rzp_payment_id']}");
-            curl_setopt($chVerify, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($chVerify, CURLOPT_HTTPHEADER, ["Authorization: Basic $auth"]);
-            $verifyResponse = json_decode(curl_exec($chVerify), true);
-            $verifyCode     = curl_getinfo($chVerify, CURLINFO_HTTP_CODE);
-
-            if ($verifyCode !== 200 || !in_array($verifyResponse['status'] ?? '', ['authorized', 'captured'])) {
-                $pdo->rollBack();
-                echo json_encode([
-                    'status'        => 'failed',
-                    'message'       => 'Cannot verify original payment with Razorpay.',
-                    'refund_amount' => 0,
-                    'refund_id'     => null
-                ]);
-                exit;
-            }
-
-            // ── 6. Call Razorpay Refund API ──────────────────────────────
-            $refundAmount = (float)$payment['amount'];
-            $amountPaise  = round($refundAmount * 100);
-
-            $ch = curl_init("https://api.razorpay.com/v1/payments/{$payment['rzp_payment_id']}/refund");
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['amount' => $amountPaise]));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Content-Type: application/json',
-                "Authorization: Basic $auth"
-            ]);
-            $rzpResponse = curl_exec($ch);
-            $httpCode    = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $rzpRefund   = json_decode($rzpResponse, true);
-
-            if ($httpCode === 200 && isset($rzpRefund['id'])) {
-                // ── 7. Store refund details ──────────────────────────────
-                $refundId   = $rzpRefund['id'];
-                $refundTime = date('Y-m-d H:i:s');
-
-                $pdo->prepare(
-                    "INSERT INTO refunds (user_id, order_id, payment_id, refund_amount, status, rzp_refund_id, created_at)
-                     VALUES (?, ?, ?, ?, 'processed', ?, ?)"
-                )->execute([$userId, $orderId, $payment['id'], $refundAmount, $refundId, $refundTime]);
-
-                $pdo->prepare("UPDATE payments SET status = 'refunded' WHERE id = ?")
-                    ->execute([$payment['id']]);
-
-                $pdo->prepare("UPDATE orders SET payment_status = 'refunded' WHERE id = ?")
-                    ->execute([$orderId]);
-
-                // ── 8. Notify user ───────────────────────────────────────
-                $notifMsg = "Your order has been cancelled. Refund of ₹{$refundAmount} has been initiated to your original payment method. It may take 3–7 working days.";
-                $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, 'Refund Initiated ✅', ?)")
-                    ->execute([$userId, $notifMsg]);
-
-                $refundMessage = $notifMsg;
-
-            } else {
-                // Razorpay call failed — fall back to manual-review queue
-                $errDesc = $rzpRefund['error']['description'] ?? 'Razorpay error';
+            if (!$dupCheck->fetch()) {
+                // Queue refund for admin approval — admin triggers Razorpay from the dashboard
                 $pdo->prepare(
                     "INSERT INTO refunds (user_id, order_id, payment_id, refund_amount, status)
                      VALUES (?, ?, ?, ?, 'requested')"
-                )->execute([$userId, $orderId, $payment['id'], $refundAmount]);
+                )->execute([$userId, $orderId, $payment['id'], $payment['amount']]);
 
                 $pdo->prepare("UPDATE payments SET status = 'refund_requested' WHERE id = ?")
                     ->execute([$payment['id']]);
-
-                $refundMessage = "Your order has been cancelled. Your refund of ₹{$refundAmount} is queued for manual processing. Reason: $errDesc";
             }
 
-            // ── 9. Audit log ─────────────────────────────────────────────
+            $refundMessage = "Your order has been cancelled. A refund of ₹{$payment['amount']} has been requested and is awaiting admin approval. It will reflect in 3–7 working days once approved.";
+
+            // Audit log
             try {
                 $pdo->prepare(
                     "INSERT INTO refund_audit_log (user_id, order_id, action_taken, note, created_at)
-                     VALUES (?, ?, 'refund_processed', ?, NOW())"
+                     VALUES (?, ?, 'refund_requested', ?, NOW())"
                 )->execute([$userId, $orderId, $refundMessage]);
-            } catch (\Exception $e) {} // Non-fatal
+            } catch (\Exception $e) {}
 
         } else {
-            // No online payment — remove unpaid COD/remaining record
+            // COD or unpaid — remove the pending payment record
             try {
                 $pdo->prepare("DELETE FROM payments WHERE order_id = ? AND status = 'remaining'")
                     ->execute([$orderId]);
@@ -567,25 +465,11 @@ if ($action === 'cancel_order') {
         } catch (\Exception $e) {}
 
         $pdo->commit();
-
-        // Output in specified format
-        echo json_encode([
-            'status'        => 'success',
-            'message'       => $refundMessage,
-            'refund_amount' => $refundAmount,
-            'refund_id'     => $refundId
-        ]);
-        exit;
+        respond(true, $refundMessage);
 
     } catch (\Exception $e) {
         $pdo->rollBack();
-        echo json_encode([
-            'status'        => 'failed',
-            'message'       => 'Database Error: ' . $e->getMessage(),
-            'refund_amount' => 0,
-            'refund_id'     => null
-        ]);
-        exit;
+        respond(false, 'Database Error: ' . $e->getMessage());
     }
 }
 
