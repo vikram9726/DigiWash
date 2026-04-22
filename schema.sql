@@ -205,6 +205,7 @@ CREATE TABLE IF NOT EXISTS `refunds` (
   `rzp_refund_id`  VARCHAR(100) DEFAULT NULL,
   `status`         ENUM('requested','processed','failed') DEFAULT 'requested',
   `created_at`     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
   KEY `order_id` (`order_id`)

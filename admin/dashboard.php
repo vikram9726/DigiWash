@@ -680,6 +680,60 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     </div>
 </div>
 
+<!-- Refund Track Modal -->
+<div class="modal-overlay" id="refundTrackModal">
+    <div class="modal-box" style="max-width:480px;">
+        <button class="modal-close" onclick="closeModal('refundTrackModal')">✕</button>
+        <div class="modal-title">Live Refund Tracking</div>
+        <div style="background:#f1f5f9;border-radius:8px;padding:1rem;margin-top:1rem;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
+                <span style="color:#64748b;font-size:0.85rem">Order Amount</span>
+                <strong id="rtk-order-amt" style="color:#0f172a"></strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
+                <span style="color:#64748b;font-size:0.85rem">Refund Amount</span>
+                <strong id="rtk-refund-amt" style="color:#10b981"></strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
+                <span style="color:#64748b;font-size:0.85rem">Requested At</span>
+                <strong id="rtk-req-date" style="color:#0f172a"></strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+                <span style="color:#64748b;font-size:0.85rem">Approved At</span>
+                <strong id="rtk-app-date" style="color:#0f172a"></strong>
+            </div>
+        </div>
+
+        <div style="margin-top:1.5rem">
+            <div style="font-weight:600;font-size:0.95rem;margin-bottom:0.5rem">Razorpay Network Status</div>
+            <div id="rtk-loading" style="display:flex;align-items:center;gap:8px;color:#6366f1;font-size:0.9rem">
+                <i class="material-icons-outlined" style="animation:spin 1s linear infinite">autorenew</i> Fetching live status...
+            </div>
+            <div id="rtk-content" style="display:none;border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.75rem">
+                    <span style="color:#64748b;font-size:0.85rem">Payment Gateway ID</span>
+                    <span id="rtk-rzp-id" style="font-family:monospace;font-size:0.8rem;color:#475569"></span>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.75rem">
+                    <span style="color:#64748b;font-size:0.85rem">Status</span>
+                    <span id="rtk-status" style="font-weight:600;text-transform:uppercase;font-size:0.8rem"></span>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.75rem">
+                    <span style="color:#64748b;font-size:0.85rem">Processing Speed</span>
+                    <span id="rtk-speed" style="color:#0f172a;font-size:0.85rem"></span>
+                </div>
+                <div style="margin-top:1rem;background:#f8fafc;padding:0.75rem;border-radius:6px;border-left:3px solid #3b82f6">
+                    <div style="color:#64748b;font-size:0.75rem;margin-bottom:0.25rem;text-transform:uppercase;letter-spacing:0.5px">Bank ARN (Acquirer Reference Number)</div>
+                    <div id="rtk-arn" style="font-family:monospace;font-size:0.9rem;color:#0f172a;word-break:break-all"></div>
+                    <div style="font-size:0.75rem;color:#64748b;margin-top:0.25rem;">Give this ARN to the customer if they need to check with their bank.</div>
+                </div>
+            </div>
+        </div>
+        <div style="margin-top:1.5rem;display:flex;justify-content:flex-end">
+            <button class="btn btn-ghost" onclick="closeModal('refundTrackModal')">Close</button>
+        </div>
+    </div>
+
 <script>
 const csrf = "<?= $_SESSION['csrf_token'] ?? '' ?>";
 
@@ -876,7 +930,13 @@ async function loadRefunds(status, chipEl) {
                     <button class="btn-sm btn-danger" onclick="openRejectModal(${r.id})" style="font-size:0.75rem;padding:4px 10px;display:flex;align-items:center;gap:4px">
                         <i class="material-icons-outlined" style="font-size:0.9rem">cancel</i> Reject
                     </button>
-                </div>` : r.rzp_refund_id ? `<span style="font-family:monospace;font-size:0.75rem;color:#10b981">${r.rzp_refund_id}</span>` : '—'}
+                </div>` : r.status === 'processed' && r.rzp_refund_id ? `
+                <div style="display:flex;flex-direction:column;gap:4px;">
+                    <span style="font-family:monospace;font-size:0.75rem;color:#10b981">${r.rzp_refund_id}</span>
+                    <button class="btn-sm btn-outline" onclick="openRefundTrackModal('${r.rzp_refund_id}', ${r.order_id}, ${r.refund_amount}, '${r.created_at}', '${r.approved_at}')" style="font-size:0.7rem;padding:2px 6px;">
+                        <i class="material-icons-outlined" style="font-size:0.8rem">info</i> Track Info
+                    </button>
+                </div>` : '—'}
             </td>
         </tr>`).join('');
 }
@@ -917,6 +977,35 @@ async function confirmRejectRefund() {
         loadRefundBadge();
     } else {
         toast('error', 'Rejection Failed', d.message);
+    }
+}
+
+async function openRefundTrackModal(rzpRefundId, orderId, refundAmt, reqDate, appDate) {
+    document.getElementById('rtk-order-amt').textContent = `Order #${orderId}`;
+    document.getElementById('rtk-refund-amt').textContent = `₹${parseFloat(refundAmt).toFixed(2)}`;
+    document.getElementById('rtk-req-date').textContent = fmtDate(reqDate, {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) || 'N/A';
+    document.getElementById('rtk-app-date').textContent = appDate ? fmtDate(appDate, {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : 'N/A';
+    
+    document.getElementById('rtk-loading').style.display = 'flex';
+    document.getElementById('rtk-content').style.display = 'none';
+    openModal('refundTrackModal');
+
+    const d = await api('get_razorpay_refund_status', { rzp_refund_id: rzpRefundId });
+    document.getElementById('rtk-loading').style.display = 'none';
+
+    if (d.success) {
+        document.getElementById('rtk-content').style.display = 'block';
+        document.getElementById('rtk-rzp-id').textContent = rzpRefundId;
+        
+        const statusEl = document.getElementById('rtk-status');
+        statusEl.textContent = d.data.status;
+        statusEl.style.color = d.data.status === 'processed' ? '#10b981' : '#f59e0b';
+        
+        document.getElementById('rtk-speed').textContent = d.data.speed || 'N/A';
+        document.getElementById('rtk-arn').textContent = d.data.arn || 'Pending / Check with Bank';
+    } else {
+        toast('error', 'Tracking Failed', d.message);
+        closeModal('refundTrackModal');
     }
 }
 

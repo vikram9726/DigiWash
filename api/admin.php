@@ -655,7 +655,7 @@ if ($action === 'get_refunds') {
     $status = $data['status'] ?? 'requested'; // 'requested' | 'processed' | 'all'
     if ($status === 'all') {
         $stmt = $pdo->query("
-            SELECT r.*, u.name AS user_name, u.phone AS user_phone, u.email AS user_email,
+            SELECT r.*, r.updated_at as approved_at, u.name AS user_name, u.phone AS user_phone, u.email AS user_email,
                    p.rzp_payment_id, p.payment_mode
             FROM refunds r
             JOIN users u ON r.user_id = u.id
@@ -664,7 +664,7 @@ if ($action === 'get_refunds') {
         ");
     } else {
         $stmt = $pdo->prepare("
-            SELECT r.*, u.name AS user_name, u.phone AS user_phone, u.email AS user_email,
+            SELECT r.*, r.updated_at as approved_at, u.name AS user_name, u.phone AS user_phone, u.email AS user_email,
                    p.rzp_payment_id, p.payment_mode
             FROM refunds r
             JOIN users u ON r.user_id = u.id
@@ -747,6 +747,34 @@ if ($action === 'reject_refund') {
     } catch (\Exception $e) {
         $pdo->rollBack();
         respond(false, 'DB Error: ' . $e->getMessage());
+    }
+}
+
+if ($action === 'get_razorpay_refund_status') {
+    $rzpRefundId = $data['rzp_refund_id'] ?? '';
+    if (!$rzpRefundId) respond(false, 'Missing Razorpay Refund ID.');
+
+    $rzpId  = getenv('RAZORPAY_KEY_ID');
+    $rzpSec = getenv('RAZORPAY_KEY_SECRET');
+    $auth   = base64_encode("$rzpId:$rzpSec");
+
+    $ch = curl_init("https://api.razorpay.com/v1/refunds/$rzpRefundId");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Basic $auth"]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode === 200) {
+        $r = json_decode($response, true);
+        respond(true, 'Razorpay details fetched.', [
+            'status' => $r['status'] ?? 'unknown',
+            'speed'  => $r['speed_processed'] ?? 'N/A',
+            'arn'    => $r['acquirer_data']['arn'] ?? 'Pending (Check bank in 3-7 days)',
+            'created_at' => isset($r['created_at']) ? date('d M Y, h:i a', $r['created_at']) : 'N/A'
+        ]);
+    } else {
+        respond(false, 'Failed to fetch tracking details from Razorpay.');
     }
 }
 
