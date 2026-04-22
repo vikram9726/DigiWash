@@ -318,19 +318,23 @@ if ($action === 'get_orders') {
 
     if ($type === 'ongoing') {
         $stmt = $pdo->prepare("
-            SELECT o.*, p.payment_mode, p.status AS payment_status, d.name as delivery_guy_name, d.phone as delivery_guy_phone 
+            SELECT o.*, p.payment_mode, p.status AS payment_status, d.name as delivery_guy_name, d.phone as delivery_guy_phone,
+                   r.rzp_refund_id, r.created_at AS refund_req_date, r.updated_at AS refund_app_date
             FROM orders o 
             LEFT JOIN payments p ON p.order_id = o.id 
             LEFT JOIN users d ON o.delivery_id = d.id
+            LEFT JOIN refunds r ON r.order_id = o.id
             WHERE o.user_id = ? AND o.status != 'delivered' AND o.status != 'cancelled' 
             ORDER BY o.created_at DESC
         ");
     } else {
         $stmt = $pdo->prepare("
-            SELECT o.*, p.payment_mode, p.status AS payment_status, d.name as delivery_guy_name, d.phone as delivery_guy_phone 
+            SELECT o.*, p.payment_mode, p.status AS payment_status, d.name as delivery_guy_name, d.phone as delivery_guy_phone,
+                   r.rzp_refund_id, r.created_at AS refund_req_date, r.updated_at AS refund_app_date
             FROM orders o 
             LEFT JOIN payments p ON p.order_id = o.id 
             LEFT JOIN users d ON o.delivery_id = d.id
+            LEFT JOIN refunds r ON r.order_id = o.id
             WHERE o.user_id = ? AND (o.status = 'delivered' OR o.status = 'cancelled') 
             ORDER BY o.created_at DESC
         ");
@@ -661,6 +665,42 @@ if ($action === 'request_pay_later_plan') {
     $stmt->execute([$userId]);
     
     respond(true, 'Pay Later plan request submitted to admin for approval!');
+}
+
+// --- GET RAZORPAY REFUND STATUS ---
+if ($action === 'get_razorpay_refund_status') {
+    $rzpRefundId = $data['rzp_refund_id'] ?? '';
+    if (!$rzpRefundId) respond(false, 'Missing Razorpay Refund ID.');
+
+    // We allow users to view their own refunds, but the rzpRefundId must match one of their orders
+    $stmt = $pdo->prepare("SELECT id FROM refunds WHERE user_id = ? AND rzp_refund_id = ?");
+    $stmt->execute([$userId, $rzpRefundId]);
+    if (!$stmt->fetch()) {
+        respond(false, 'Unauthorized. Refund ID does not belong to your account.');
+    }
+
+    $rzpId  = getenv('RAZORPAY_KEY_ID');
+    $rzpSec = getenv('RAZORPAY_KEY_SECRET');
+    $auth   = base64_encode("$rzpId:$rzpSec");
+
+    $ch = curl_init("https://api.razorpay.com/v1/refunds/$rzpRefundId");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Basic $auth"]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode === 200) {
+        $r = json_decode($response, true);
+        respond(true, 'Razorpay details fetched.', [
+            'status' => $r['status'] ?? 'unknown',
+            'speed'  => $r['speed_processed'] ?? 'N/A',
+            'arn'    => $r['acquirer_data']['arn'] ?? 'Pending (Check bank in 3-7 days)',
+            'created_at' => isset($r['created_at']) ? date('d M Y, h:i a', $r['created_at']) : 'N/A'
+        ]);
+    } else {
+        respond(false, 'Failed to fetch tracking details from Razorpay.');
+    }
 }
 
 respond(false, 'Invalid action specified in api/orders.php');

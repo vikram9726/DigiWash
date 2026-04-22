@@ -503,6 +503,60 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
             <button class="btn btn-danger" style="flex:1;justify-content:center;" onclick="confirmCancelOrder()">Yes, Cancel</button>
             <button class="btn btn-ghost" style="flex:1;justify-content:center;" onclick="closeModal('cancelModal')">Keep Order</button>
         </div>
+</div>
+
+<!-- Refund Track Modal -->
+<div class="modal-overlay" id="refundTrackModal">
+    <div class="modal-box" style="max-width:480px;">
+        <button class="modal-close" onclick="closeModal('refundTrackModal')">✕</button>
+        <div class="modal-title">Live Refund Tracking</div>
+        <div style="background:#f1f5f9;border-radius:8px;padding:1rem;margin-top:1rem;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
+                <span style="color:#64748b;font-size:0.85rem">Order Amount</span>
+                <strong id="rtk-order-amt" style="color:#0f172a"></strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
+                <span style="color:#64748b;font-size:0.85rem">Refund Amount</span>
+                <strong id="rtk-refund-amt" style="color:#10b981"></strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
+                <span style="color:#64748b;font-size:0.85rem">Requested At</span>
+                <strong id="rtk-req-date" style="color:#0f172a"></strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+                <span style="color:#64748b;font-size:0.85rem">Approved At</span>
+                <strong id="rtk-app-date" style="color:#0f172a"></strong>
+            </div>
+        </div>
+
+        <div style="margin-top:1.5rem">
+            <div style="font-weight:600;font-size:0.95rem;margin-bottom:0.5rem">Razorpay Network Status</div>
+            <div id="rtk-loading" style="display:flex;align-items:center;gap:8px;color:#6366f1;font-size:0.9rem">
+                <i class="material-icons-outlined" style="animation:spin 1s linear infinite">autorenew</i> Fetching live status...
+            </div>
+            <div id="rtk-content" style="display:none;border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.75rem">
+                    <span style="color:#64748b;font-size:0.85rem">Payment Gateway ID</span>
+                    <span id="rtk-rzp-id" style="font-family:monospace;font-size:0.8rem;color:#475569"></span>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.75rem">
+                    <span style="color:#64748b;font-size:0.85rem">Status</span>
+                    <span id="rtk-status" style="font-weight:600;text-transform:uppercase;font-size:0.8rem"></span>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.75rem">
+                    <span style="color:#64748b;font-size:0.85rem">Processing Speed</span>
+                    <span id="rtk-speed" style="color:#0f172a;font-size:0.85rem"></span>
+                </div>
+                <div style="margin-top:1rem;background:#f8fafc;padding:0.75rem;border-radius:6px;border-left:3px solid #3b82f6">
+                    <div style="color:#64748b;font-size:0.75rem;margin-bottom:0.25rem;text-transform:uppercase;letter-spacing:0.5px">Bank ARN (Acquirer Reference Number)</div>
+                    <div id="rtk-arn" style="font-family:monospace;font-size:0.9rem;color:#0f172a;word-break:break-all"></div>
+                    <div style="font-size:0.75rem;color:#64748b;margin-top:0.25rem;">Give this ARN to your bank's customer support to track the refund.</div>
+                </div>
+            </div>
+        </div>
+        <div style="margin-top:1.5rem;display:flex;justify-content:flex-end">
+            <button class="btn btn-ghost" onclick="closeModal('refundTrackModal')">Close</button>
+        </div>
     </div>
 </div>
 
@@ -984,12 +1038,15 @@ async function loadOrders(type, tabEl) {
                             </div>
                         </div>`;
                     if (o.payment_status === 'refunded') return `
-                        <div style="display:flex;align-items:center;gap:10px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:0.7rem 1rem;margin-top:0.75rem;">
-                            <i class="material-icons-outlined" style="color:#16a34a;font-size:1.3rem;">check_circle</i>
-                            <div>
-                                <div style="font-weight:700;color:#14532d;font-size:0.85rem;">✅ Refund Processed</div>
-                                <div style="font-size:0.75rem;color:#15803d;margin-top:2px;">Your refund of ₹${o.total_amount} has been processed. It may take 3–7 working days to reflect.</div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:0.7rem 1rem;margin-top:0.75rem;flex-wrap:wrap;gap:10px;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <i class="material-icons-outlined" style="color:#16a34a;font-size:1.3rem;">check_circle</i>
+                                <div>
+                                    <div style="font-weight:700;color:#14532d;font-size:0.85rem;">✅ Refund Processed</div>
+                                    <div style="font-size:0.75rem;color:#15803d;margin-top:2px;">Your refund of ₹${o.total_amount} has been processed. It may take 3–7 working days to reflect.</div>
+                                </div>
                             </div>
+                            ${o.rzp_refund_id ? `<button class="btn btn-sm btn-outline" onclick="openRefundTrackModal('${o.rzp_refund_id}', ${o.id}, ${o.total_amount}, '${o.refund_req_date}', '${o.refund_app_date}')" style="font-size:0.75rem;border-color:#16a34a;color:#15803d;background:white;display:flex;align-items:center;gap:4px;"><i class="material-icons-outlined" style="font-size:0.9rem;">info</i> Track Refund</button>` : ''}
                         </div>`;
                     return '';
                 })() : ''}
@@ -1034,6 +1091,35 @@ async function confirmCancelOrder() {
         btnElem.innerHTML = originalText;
         btnElem.disabled = false;
         btnElem.style.opacity = '1';
+    }
+}
+
+async function openRefundTrackModal(rzpRefundId, orderId, refundAmt, reqDate, appDate) {
+    document.getElementById('rtk-order-amt').textContent = `Order #${orderId}`;
+    document.getElementById('rtk-refund-amt').textContent = `₹${parseFloat(refundAmt).toFixed(2)}`;
+    document.getElementById('rtk-req-date').textContent = fmtDate(reqDate, {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) || 'N/A';
+    document.getElementById('rtk-app-date').textContent = appDate && appDate !== 'null' ? fmtDate(appDate, {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : 'N/A';
+    
+    document.getElementById('rtk-loading').style.display = 'flex';
+    document.getElementById('rtk-content').style.display = 'none';
+    openModal('refundTrackModal');
+
+    const d = await apiCall('../api/orders.php', 'get_razorpay_refund_status', { rzp_refund_id: rzpRefundId });
+    document.getElementById('rtk-loading').style.display = 'none';
+
+    if (d.success) {
+        document.getElementById('rtk-content').style.display = 'block';
+        document.getElementById('rtk-rzp-id').textContent = rzpRefundId;
+        
+        const statusEl = document.getElementById('rtk-status');
+        statusEl.textContent = d.data.status;
+        statusEl.style.color = d.data.status === 'processed' ? '#10b981' : '#f59e0b';
+        
+        document.getElementById('rtk-speed').textContent = d.data.speed || 'N/A';
+        document.getElementById('rtk-arn').textContent = d.data.arn || 'Pending / Check with Bank';
+    } else {
+        toast('error', 'Tracking Failed', d.message);
+        closeModal('refundTrackModal');
     }
 }
 
@@ -1565,5 +1651,9 @@ document.addEventListener('DOMContentLoaded', () => {
     switchTab(initialHash, document.getElementById('nav-' + initialHash), true);
 });
 </script>
+<!-- Deployment Verification Badge -->
+<div style="text-align:center; padding: 20px; font-size: 0.8rem; color: #94a3b8; font-weight: bold;">
+    DigiWash User Dashboard v2.1-RefundTracking (Updated)
+</div>
 </body>
 </html>
