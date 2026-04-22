@@ -1097,8 +1097,9 @@ async function confirmCancelOrder() {
 async function openRefundTrackModal(rzpRefundId, orderId, refundAmt, reqDate, appDate) {
     document.getElementById('rtk-order-amt').textContent = `Order #${orderId}`;
     document.getElementById('rtk-refund-amt').textContent = `₹${parseFloat(refundAmt).toFixed(2)}`;
-    document.getElementById('rtk-req-date').textContent = fmtDate(reqDate, {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) || 'N/A';
-    document.getElementById('rtk-app-date').textContent = appDate && appDate !== 'null' ? fmtDate(appDate, {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : 'N/A';
+    const formatOptions = { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' };
+    document.getElementById('rtk-req-date').textContent = reqDate && reqDate !== 'null' ? new Date(reqDate).toLocaleString('en-IN', formatOptions) : 'N/A';
+    document.getElementById('rtk-app-date').textContent = appDate && appDate !== 'null' ? new Date(appDate).toLocaleString('en-IN', formatOptions) : 'N/A';
     
     document.getElementById('rtk-loading').style.display = 'flex';
     document.getElementById('rtk-content').style.display = 'none';
