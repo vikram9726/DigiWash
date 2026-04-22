@@ -281,7 +281,9 @@ if ($action === 'create_order') {
         }
 
         // --- Insert payment ---
-        $pdo->prepare("INSERT INTO payments (user_id, order_id, payment_mode, status, amount) VALUES (?, ?, ?, ?, ?)")->execute([$userId, $orderId, $paymentMode, $paymentState, $totalAmount]);
+        $r_ordId_to_save = $paymentMode === 'ONLINE' ? ($data['razorpay_order_id'] ?? null) : null;
+        $pdo->prepare("INSERT INTO payments (user_id, order_id, payment_mode, status, amount, rzp_payment_id, rzp_order_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
+            ->execute([$userId, $orderId, $paymentMode, $paymentState, $totalAmount, $transactionId, $r_ordId_to_save]);
 
         // --- Coupon usage ---
         if ($appliedCouponId) {
