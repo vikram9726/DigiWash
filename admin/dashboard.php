@@ -769,8 +769,14 @@ async function loadStats() {
     if (d.pending_returns > 0) { rb.textContent = d.pending_returns; rb.style.display = 'inline'; }
     else rb.style.display = 'none';
 
-    // Refund badge — always reload from server
-    loadRefundBadge();
+    // Update refunds badge directly from stats (no extra API call needed)
+    const rfb = document.getElementById('refundsBadge');
+    if (d.pending_refunds > 0) {
+        rfb.textContent = d.pending_refunds;
+        rfb.style.display = 'inline';
+    } else {
+        rfb.style.display = 'none';
+    }
 }
 
 let revChart, distChart, ordChart;

@@ -56,14 +56,21 @@ if ($action === 'get_stats') {
     $stmt = $pdo->query("SELECT COUNT(*) FROM returns WHERE admin_status = 'pending'");
     $pendingReturns = $stmt->fetchColumn();
 
+    $pendingRefunds = 0;
+    try {
+        $stmt = $pdo->query("SELECT COUNT(*) FROM refunds WHERE status = 'requested'");
+        $pendingRefunds = (int)$stmt->fetchColumn();
+    } catch (\Exception $e) {}
+
     respond(true, 'Stats fetched', [
-        'users'           => $totalUsers,
-        'orders'          => $activeOrders,
-        'revenue'         => number_format($pendingRevenue, 2),
-        'total_revenue'   => number_format($totalRevenue, 2),
-        'partners'        => $deliveryPartners,
-        'total_orders'    => $totalOrders,
-        'pending_returns' => $pendingReturns
+        'users'            => $totalUsers,
+        'orders'           => $activeOrders,
+        'revenue'          => number_format($pendingRevenue, 2),
+        'total_revenue'    => number_format($totalRevenue, 2),
+        'partners'         => $deliveryPartners,
+        'total_orders'     => $totalOrders,
+        'pending_returns'  => $pendingReturns,
+        'pending_refunds'  => $pendingRefunds
     ]);
 }
 

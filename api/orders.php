@@ -431,6 +431,20 @@ if ($action === 'cancel_order') {
 
                 $pdo->prepare("UPDATE payments SET status = 'refund_requested' WHERE id = ?")
                     ->execute([$payment['id']]);
+
+                // Notify admin — so refundsBadge updates in real time
+                try {
+                    $adminStmt = $pdo->query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+                    $admin = $adminStmt->fetch();
+                    if ($admin) {
+                        $pdo->prepare(
+                            "INSERT INTO notifications (user_id, title, message) VALUES (?, '💰 Refund Requested', ?)"
+                        )->execute([
+                            $admin['id'],
+                            "Order #$orderId cancelled. Refund of ₹{$payment['amount']} is pending your approval."
+                        ]);
+                    }
+                } catch (\Exception $e) {}
             }
 
             $refundMessage = "Your order has been cancelled. A refund of ₹{$payment['amount']} has been requested and is awaiting admin approval. It will reflect in 3–7 working days once approved.";
