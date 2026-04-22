@@ -1113,11 +1113,11 @@ async function openRefundTrackModal(rzpRefundId, orderId, refundAmt, reqDate, ap
         document.getElementById('rtk-rzp-id').textContent = rzpRefundId;
         
         const statusEl = document.getElementById('rtk-status');
-        statusEl.textContent = d.data.status;
-        statusEl.style.color = d.data.status === 'processed' ? '#10b981' : '#f59e0b';
+        statusEl.textContent = d.status;
+        statusEl.style.color = d.status === 'processed' ? '#10b981' : '#f59e0b';
         
-        document.getElementById('rtk-speed').textContent = d.data.speed || 'N/A';
-        document.getElementById('rtk-arn').textContent = d.data.arn || 'Pending / Check with Bank';
+        document.getElementById('rtk-speed').textContent = d.speed || 'N/A';
+        document.getElementById('rtk-arn').textContent = d.arn || 'Pending / Check with Bank';
     } else {
         toast('error', 'Tracking Failed', d.message);
         closeModal('refundTrackModal');
