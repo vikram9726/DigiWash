@@ -1,8 +1,29 @@
+# Secrets & environment
 .env
+
+# JSON files (except firebase SW and composer)
 *.json
 !firebase-messaging-sw.js
+!composer.json
+
+# Dependencies
 vendor/
 node_modules/
+
+# OS & editor
 .DS_Store
 *.log
 tmp/
+.idea/
+.vscode/
+
+# Hostinger server-generated files
+private/
+google*.html
+sitemap*.xml
+
+# User uploads (server-side content, not tracked in git)
+uploads/
+
+# Composer lock — managed by Hostinger on deploy
+composer.lock
