@@ -4,22 +4,19 @@
  * Handles auto-generation of combined invoices and Razorpay integration.
  */
 require_once __DIR__ . '/../config.php';
-require_once __DIR__ . '/../vendor/autoload.php'; // DomPDF
-
-use Dompdf\Dompdf;
-use Dompdf\Options;
 
 header('Content-Type: application/json');
 
-function respond($s, $m, $d=[]) { echo json_encode(array_merge(['success'=>$s,'message'=>$m], $d)); exit; }
+function respond($s, $m, $d = [])
+{
+    echo json_encode(array_merge(['success' => $s, 'message' => $m], $d));
+    exit;
+}
 
 $data = json_decode(file_get_contents('php://input'), true) ?? $_POST;
 $action = $data['action'] ?? ($_GET['action'] ?? '');
 
-// Initialize DOMPDF Options
-$pdfOptions = new Options();
-$pdfOptions->set('defaultFont', 'Helvetica');
-$pdfOptions->set('isRemoteEnabled', true);
+// Native browser print will be used instead of DomPDF
 
 /**
  * Save / Get Receipt Header Configurations
@@ -27,12 +24,12 @@ $pdfOptions->set('isRemoteEnabled', true);
 if ($action === 'get_receipt_settings') {
     $file = __DIR__ . '/receipt_settings.json';
     $defaults = [
-        'store_name' => 'DigiWash Laundry',
+        'store_name' => 'DigiWash',
         'tagline' => 'Premium Dry Cleaning Services',
         'address' => '123 Clean Street, Model Town',
-        'phone' => '+91 9876543210',
-        'email' => 'support@digiwash.com',
-        'gst_no' => '27AAACD1234E1Z5',
+        'phone' => '+91 9726232915',
+        'email' => 'vikramvarma9726@gmail.com',
+        'gst_no' => '',
         'footer_note' => 'Thank you for choosing DigiWash. For support, please contact us.'
     ];
     $sets = file_exists($file) ? json_decode(file_get_contents($file), true) : $defaults;
@@ -40,7 +37,8 @@ if ($action === 'get_receipt_settings') {
 }
 if ($action === 'save_receipt_settings') {
     $adminId = $_SESSION['admin_id'] ?? null;
-    if (!$adminId) respond(false, 'Unauthorized');
+    if (!$adminId)
+        respond(false, 'Unauthorized');
     $file = __DIR__ . '/receipt_settings.json';
     file_put_contents($file, json_encode($data['settings'] ?? [], JSON_PRETTY_PRINT));
     respond(true, 'Receipt format updated successfully!');
@@ -65,7 +63,7 @@ if ($action === 'auto_generate') {
     $generated = 0;
     foreach ($usersToInvoice as $u) {
         $userId = $u['user_id'];
-        
+
         // Fetch the 4 oldest unpaid orders for this user
         $stmtOrders = $pdo->prepare("
             SELECT o.id, p.amount 
@@ -79,7 +77,7 @@ if ($action === 'auto_generate') {
         if (count($orders) === 4) {
             $totalAmt = array_sum(array_column($orders, 'amount'));
             $invNo = 'INV-' . strtoupper(substr(md5(uniqid()), 0, 8));
-            
+
             // Generate Invoice Record
             $insInv = $pdo->prepare("INSERT INTO invoices (user_id, invoice_no, description, amount, status) VALUES (?, ?, 'Combined Billing (4 Orders)', ?, 'unpaid')");
             $insInv->execute([$userId, $invNo, $totalAmt]);
@@ -102,7 +100,8 @@ if ($action === 'auto_generate') {
 if ($action === 'get_invoices') {
     $userId = $_SESSION['user_id'] ?? null;
     $adminId = $_SESSION['admin_id'] ?? null;
-    if (!$userId && !$adminId) respond(false, 'Unauthorized');
+    if (!$userId && !$adminId)
+        respond(false, 'Unauthorized');
 
     if ($adminId) {
         $stmt = $pdo->query("SELECT i.*, u.name as user_name, u.phone FROM invoices i JOIN users u ON i.user_id = u.id ORDER BY i.created_at DESC");
@@ -129,15 +128,18 @@ if ($action === 'download_pdf') {
     $invoiceId = $_GET['id'] ?? 0;
     $userId = $_SESSION['user_id'] ?? null;
     $adminId = $_SESSION['admin_id'] ?? null;
-    if (!$userId && !$adminId) die("Unauthorized");
+    if (!$userId && !$adminId)
+        die("Unauthorized");
 
     // Fetch Invoice & User
     $stmt = $pdo->prepare("SELECT i.*, u.name as customer_name, u.phone, u.shop_address FROM invoices i JOIN users u ON i.user_id = u.id WHERE i.id = ?");
     $stmt->execute([$invoiceId]);
     $inv = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$inv) die("Invoice not found.");
-    if (!$adminId && $inv['user_id'] != $userId) die("Unauthorized Access");
+
+    if (!$inv)
+        die("Invoice not found.");
+    if (!$adminId && $inv['user_id'] != $userId)
+        die("Unauthorized Access");
 
     // Fetch linked orders
     $stmtOrd = $pdo->prepare("SELECT o.id as order_id, o.created_at, p.amount 
@@ -145,7 +147,7 @@ if ($action === 'download_pdf') {
                               WHERE o.invoice_id = ?");
     $stmtOrd->execute([$invoiceId]);
     $orders = $stmtOrd->fetchAll(PDO::FETCH_ASSOC);
-    
+
     $gstAmt = $inv['amount'] * 0.18; // Optional 18% GST Logic if needed
     $payStatus = strtoupper($inv['status']);
     $dateStr = date('d M Y', strtotime($inv['created_at']));
@@ -153,7 +155,13 @@ if ($action === 'download_pdf') {
     // Load store context
     $file = __DIR__ . '/receipt_settings.json';
     $store = file_exists($file) ? json_decode(file_get_contents($file), true) : [
-        'store_name' => 'DigiWash Laundry', 'tagline' => '', 'address' => '', 'phone' => '', 'email' => '', 'gst_no' => '', 'footer_note' => 'Thank you for choosing DigiWash.'
+        'store_name' => 'DigiWash',
+        'tagline' => 'Premium Dry Cleaning Services',
+        'address' => '',
+        'phone' => '+91 9726232915',
+        'email' => 'vikramvarma9726@gmail.com',
+        'gst_no' => '',
+        'footer_note' => 'Thank you for choosing DigiWash.'
     ];
 
     // Build HTML for DomPDF
@@ -161,6 +169,7 @@ if ($action === 'download_pdf') {
     <!DOCTYPE html>
     <html>
     <head>
+        <meta charset='UTF-8'>
         <style>
             body { font-family: 'Helvetica', sans-serif; color: #333; }
             .header { border-bottom: 2px solid #6366f1; padding-bottom: 10px; margin-bottom: 20px; }
@@ -208,7 +217,7 @@ if ($action === 'download_pdf') {
                 </td>
                 <td width='50%' align='right'>
                     <strong>Status:</strong><br>
-                    <span class='badge " . ($payStatus==='PAID'?'b-paid':'b-unpaid') . "'>{$payStatus}</span>
+                    <span class='badge " . ($payStatus === 'PAID' ? 'b-paid' : 'b-unpaid') . "'>{$payStatus}</span>
                 </td>
             </tr>
         </table>
@@ -223,16 +232,16 @@ if ($action === 'download_pdf') {
                 </tr>
             </thead>
             <tbody>";
-            
-            foreach ($orders as $o) {
-                // We could fetch specific order items here and nest them, but grouping by order is cleaner for combined bills.
-                $html .= "<tr>
+
+    foreach ($orders as $o) {
+        // We could fetch specific order items here and nest them, but grouping by order is cleaner for combined bills.
+        $html .= "<tr>
                             <td>Order #{$o['order_id']}</td>
                             <td>" . date('d M Y', strtotime($o['created_at'])) . "</td>
                             <td>Laundry Service</td>
                             <td align='right'>" . number_format($o['amount'], 2) . "</td>
                           </tr>";
-            }
+    }
 
     $html .= "
             </tbody>
@@ -250,11 +259,9 @@ if ($action === 'download_pdf') {
     </body>
     </html>";
 
-    $dompdf = new Dompdf($pdfOptions);
-    $dompdf->loadHtml($html);
-    $dompdf->setPaper('A4', 'portrait');
-    $dompdf->render();
-    $dompdf->stream("Invoice_{$inv['invoice_no']}.pdf", ["Attachment" => false]);
+    $html .= "<script>window.onload = function() { window.print(); setTimeout(function(){ window.close(); }, 500); }</script>";
+    header('Content-Type: text/html; charset=utf-8');
+    echo $html;
     exit;
 }
 
@@ -264,7 +271,8 @@ if ($action === 'download_pdf') {
 if ($action === 'download_order_pdf') {
     $orderId = $_GET['order_id'] ?? 0;
     $userId = $_SESSION['user_id'] ?? null;
-    if (!$userId && !isset($_SESSION['admin_id'])) die("Unauthorized");
+    if (!$userId && !isset($_SESSION['admin_id']))
+        die("Unauthorized");
 
     // Fetch Order & User
     $stmt = $pdo->prepare("SELECT o.*, u.name as customer_name, u.phone, u.shop_address, p.payment_mode, p.status as payment_status 
@@ -274,9 +282,11 @@ if ($action === 'download_order_pdf') {
                            WHERE o.id = ?");
     $stmt->execute([$orderId]);
     $ord = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$ord) die("Order not found.");
-    if (!isset($_SESSION['admin_id']) && $ord['user_id'] != $userId) die("Unauthorized Access");
+
+    if (!$ord)
+        die("Order not found.");
+    if (!isset($_SESSION['admin_id']) && $ord['user_id'] != $userId)
+        die("Unauthorized Access");
 
     // Fetch Items
     $stmtItm = $pdo->prepare("SELECT product_name, size_label, quantity, price, line_total FROM order_items WHERE order_id = ?");
@@ -290,13 +300,20 @@ if ($action === 'download_order_pdf') {
     // Load store context
     $file = __DIR__ . '/receipt_settings.json';
     $store = file_exists($file) ? json_decode(file_get_contents($file), true) : [
-        'store_name' => 'DigiWash Laundry', 'tagline' => '', 'address' => '', 'phone' => '', 'email' => '', 'gst_no' => '', 'footer_note' => 'Thank you for choosing DigiWash.'
+        'store_name' => 'DigiWash Laundry',
+        'tagline' => '',
+        'address' => '',
+        'phone' => '',
+        'email' => '',
+        'gst_no' => '',
+        'footer_note' => 'Thank you for choosing DigiWash.'
     ];
 
     $html = "
     <!DOCTYPE html>
     <html>
     <head>
+        <meta charset='UTF-8'>
         <style>
             body { font-family: 'Helvetica', sans-serif; color: #333; }
             .header { border-bottom: 2px solid #6366f1; padding-bottom: 10px; margin-bottom: 20px; }
@@ -346,7 +363,7 @@ if ($action === 'download_order_pdf') {
                 </td>
                 <td width='50%' align='right'>
                     <strong>Status:</strong><br>
-                    <span class='badge " . ($payStatus==='PAID'?'b-paid':'b-unpaid') . "'>{$payStatus}</span><br><br>
+                    <span class='badge " . ($payStatus === 'PAID' ? 'b-paid' : 'b-unpaid') . "'>{$payStatus}</span><br><br>
                     <strong>Payment Mode:</strong><br>
                     " . str_replace('_', ' ', $ord['payment_mode'] ?? 'N/A') . "
                 </td>
@@ -363,19 +380,19 @@ if ($action === 'download_order_pdf') {
                 </tr>
             </thead>
             <tbody>";
-            
-            if (empty($items)) {
-                $html .= "<tr><td colspan='4'>Laundry Service (Requested)</td></tr>";
-            } else {
-                foreach ($items as $item) {
-                    $html .= "<tr>
+
+    if (empty($items)) {
+        $html .= "<tr><td colspan='4'>Laundry Service (Requested)</td></tr>";
+    } else {
+        foreach ($items as $item) {
+            $html .= "<tr>
                                 <td>{$item['product_name']} ({$item['size_label']})</td>
                                 <td>{$item['quantity']}</td>
                                 <td align='right'>{$item['price']}</td>
                                 <td align='right'>{$item['line_total']}</td>
                               </tr>";
-                }
-            }
+        }
+    }
 
     $html .= "
             </tbody>
@@ -393,11 +410,9 @@ if ($action === 'download_order_pdf') {
     </body>
     </html>";
 
-    $dompdf = new Dompdf($pdfOptions);
-    $dompdf->loadHtml($html);
-    $dompdf->setPaper('A4', 'portrait');
-    $dompdf->render();
-    $dompdf->stream("Order_{$ord['id']}_Receipt.pdf", ["Attachment" => false]);
+    $html .= "<script>window.onload = function() { window.print(); setTimeout(function(){ window.close(); }, 500); }</script>";
+    header('Content-Type: text/html; charset=utf-8');
+    echo $html;
     exit;
 }
 
@@ -407,17 +422,20 @@ if ($action === 'download_order_pdf') {
 if ($action === 'initiate_payment') {
     $invId = $data['invoice_id'] ?? 0;
     $userId = $_SESSION['user_id'] ?? null;
-    if (!$userId) respond(false, 'Unauthorized');
-    
+    if (!$userId)
+        respond(false, 'Unauthorized');
+
     $stmt = $pdo->prepare("SELECT * FROM invoices WHERE id = ? AND user_id = ? AND status = 'unpaid'");
     $stmt->execute([$invId, $userId]);
     $inv = $stmt->fetch();
-    
-    if (!$inv) respond(false, 'Invoice not found or already paid.');
+
+    if (!$inv)
+        respond(false, 'Invoice not found or already paid.');
 
     $rzpId = getenv('RAZORPAY_KEY_ID');
     $rzpSec = getenv('RAZORPAY_KEY_SECRET');
-    if (!$rzpId) respond(false, 'Razorpay not configured.');
+    if (!$rzpId)
+        respond(false, 'Razorpay not configured.');
 
     $amountInPaise = round($inv['amount'] * 100);
 
@@ -437,7 +455,7 @@ if ($action === 'initiate_payment') {
     curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json", "Authorization: Basic $auth"]);
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    // curl_close($ch); // Deprecated in PHP >= 8.0
 
     $resData = json_decode($response, true);
     if ($httpCode === 200 && isset($resData['id'])) {
@@ -466,11 +484,11 @@ if ($action === 'verify_payment') {
             // 1. Mark invoice paid
             $pdo->prepare("UPDATE invoices SET status = 'paid', rzp_payment_id = ?, updated_at = NOW() WHERE id = ? AND rzp_order_id = ?")
                 ->execute([$rzpPaymentId, $invId, $rzpOrderId]);
-            
+
             // 2. Mark associated orders' payments as paid
             $pdo->prepare("UPDATE payments p JOIN orders o ON p.order_id = o.id SET p.status = 'completed' WHERE o.invoice_id = ?")
                 ->execute([$invId]);
-                
+
             $pdo->commit();
             respond(true, 'Invoice Paid Successfully!');
         } catch (Exception $e) {

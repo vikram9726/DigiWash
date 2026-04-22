@@ -233,7 +233,7 @@ if ($action === 'create_order') {
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                 curl_setopt($ch, CURLOPT_USERPWD, $rID . ':' . $rSec);
                 $rzpData = json_decode(curl_exec($ch), true);
-                curl_close($ch);
+                // curl_close($ch);
 
                 if (!isset($rzpData['status']) || !in_array($rzpData['status'], ['authorized', 'captured'])) {
                     $pdo->rollBack(); respond(false, 'Payment transaction was not authorized or captured at Razorpay.');
@@ -301,7 +301,7 @@ if ($action === 'create_order') {
         curl_setopt($ch, CURLOPT_TIMEOUT, 1);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         @curl_exec($ch);
-        @curl_close($ch);
+        // @curl_close($ch);
 
         respond(true, 'Order placed! A delivery partner will be assigned soon.', ['order_id' => $orderId]);
     } catch (\Exception $e) {
@@ -316,7 +316,7 @@ if ($action === 'get_orders') {
 
     if ($type === 'ongoing') {
         $stmt = $pdo->prepare("
-            SELECT o.*, p.payment_mode, d.name as delivery_guy_name, d.phone as delivery_guy_phone 
+            SELECT o.*, p.payment_mode, p.status AS payment_status, d.name as delivery_guy_name, d.phone as delivery_guy_phone 
             FROM orders o 
             LEFT JOIN payments p ON p.order_id = o.id 
             LEFT JOIN users d ON o.delivery_id = d.id
@@ -325,7 +325,7 @@ if ($action === 'get_orders') {
         ");
     } else {
         $stmt = $pdo->prepare("
-            SELECT o.*, p.payment_mode, d.name as delivery_guy_name, d.phone as delivery_guy_phone 
+            SELECT o.*, p.payment_mode, p.status AS payment_status, d.name as delivery_guy_name, d.phone as delivery_guy_phone 
             FROM orders o 
             LEFT JOIN payments p ON p.order_id = o.id 
             LEFT JOIN users d ON o.delivery_id = d.id
@@ -406,14 +406,32 @@ if ($action === 'cancel_order') {
             $pdo->prepare("UPDATE users SET current_orders = GREATEST(0, current_orders - 1) WHERE id = ?")->execute([$order['delivery_id']]);
         }
 
-        // Remove active payment dues to prevent blocking new orders
-        try { $pdo->prepare("DELETE FROM payments WHERE order_id = ? AND status = 'remaining'")->execute([$orderId]); } catch (\Exception $e) {}
+        // --- NEW MANUAL REFUND WORKFLOW ---
+        $payStmt = $pdo->prepare("SELECT id, amount, rzp_payment_id, status FROM payments WHERE order_id = ? AND status IN ('remaining', 'completed')");
+        $payStmt->execute([$orderId]);
+        $payment = $payStmt->fetch();
+
+        $refundMessage = "Your order has been successfully cancelled.";
+
+        if ($payment && $payment['status'] === 'completed' && !empty($payment['rzp_payment_id'])) {
+            try {
+                $stmtRef = $pdo->prepare("INSERT INTO refunds (user_id, order_id, payment_id, refund_amount, status) VALUES (?, ?, ?, ?, 'requested')");
+                $stmtRef->execute([$userId, $orderId, $payment['id'], $payment['amount']]);
+                $pdo->prepare("UPDATE payments SET status = 'refund_requested' WHERE id = ?")->execute([$payment['id']]);
+            } catch (\Exception $e) {} // Failsafe if DB migration not applied
+
+            $refundMessage = "Your order has been cancelled. A refund of ₹{$payment['amount']} has been requested and is awaiting administration approval.";
+
+        } else {
+            // Remove active payment dues to prevent blocking new orders if COD/remaining
+            try { $pdo->prepare("DELETE FROM payments WHERE order_id = ? AND status = 'remaining'")->execute([$orderId]); } catch (\Exception $e) {}
+        }
 
         // Release coupon usage
         try { $pdo->prepare("DELETE FROM coupon_usages WHERE order_id = ?")->execute([$orderId]); } catch (\Exception $e) {}
 
         $pdo->commit();
-        respond(true, 'Your order has been successfully cancelled.');
+        respond(true, $refundMessage);
     } catch (\Exception $e) {
         $pdo->rollBack();
         respond(false, 'Database Error: ' . $e->getMessage());
@@ -515,7 +533,7 @@ if ($action === 'request_return') {
     // 2. Strict MIME Type Validation using finfo (Not just string extension)
     $finfo = finfo_open(FILEINFO_MIME_TYPE);
     $mimeType = finfo_file($finfo, $_FILES['return_photo']['tmp_name']);
-    finfo_close($finfo);
+    // finfo_close($finfo);
 
     $allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg'];
     if (!in_array($mimeType, $allowedMimeTypes)) {

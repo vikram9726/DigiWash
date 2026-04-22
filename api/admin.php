@@ -641,4 +641,107 @@ if ($action === 'get_coupon_usage') {
     respond(true, 'Usage fetched', ['usages' => $stmt->fetchAll()]);
 }
 
+// ─────────────────────────────────────────────
+// REFUNDS MANAGEMENT
+// ─────────────────────────────────────────────
+if ($action === 'get_refunds') {
+    $status = $data['status'] ?? 'requested'; // 'requested' | 'processed' | 'all'
+    if ($status === 'all') {
+        $stmt = $pdo->query("
+            SELECT r.*, u.name AS user_name, u.phone AS user_phone, u.email AS user_email,
+                   p.rzp_payment_id, p.payment_mode
+            FROM refunds r
+            JOIN users u ON r.user_id = u.id
+            LEFT JOIN payments p ON r.payment_id = p.id
+            ORDER BY r.created_at DESC
+        ");
+    } else {
+        $stmt = $pdo->prepare("
+            SELECT r.*, u.name AS user_name, u.phone AS user_phone, u.email AS user_email,
+                   p.rzp_payment_id, p.payment_mode
+            FROM refunds r
+            JOIN users u ON r.user_id = u.id
+            LEFT JOIN payments p ON r.payment_id = p.id
+            WHERE r.status = ?
+            ORDER BY r.created_at DESC
+        ");
+        $stmt->execute([$status]);
+    }
+    respond(true, 'Refunds fetched', ['refunds' => $stmt->fetchAll()]);
+}
+
+if ($action === 'approve_refund') {
+    $refundId = (int)($data['refund_id'] ?? 0);
+    if (!$refundId) respond(false, 'Invalid refund ID.');
+
+    // Fetch refund details
+    $stmt = $pdo->prepare("SELECT r.*, p.rzp_payment_id, p.amount AS pay_amount FROM refunds r LEFT JOIN payments p ON r.payment_id = p.id WHERE r.id = ? AND r.status = 'requested'");
+    $stmt->execute([$refundId]);
+    $refund = $stmt->fetch();
+    if (!$refund) respond(false, 'Refund not found or already processed.');
+
+    if (empty($refund['rzp_payment_id'])) respond(false, 'No Razorpay payment ID on record — cannot initiate refund.');
+
+    // Call Razorpay Refund API
+    $rzpId  = getenv('RAZORPAY_KEY_ID');
+    $rzpSec = getenv('RAZORPAY_KEY_SECRET');
+    $auth   = base64_encode("$rzpId:$rzpSec");
+    $api_url = "https://api.razorpay.com/v1/payments/{$refund['rzp_payment_id']}/refund";
+    $payload = ['amount' => round($refund['refund_amount'] * 100)];
+
+    $ch = curl_init($api_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', "Authorization: Basic $auth"]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+    if ($httpCode === 200) {
+        $rzpRefund = json_decode($response, true);
+        try {
+            $pdo->beginTransaction();
+            $pdo->prepare("UPDATE refunds SET status = 'processed', rzp_refund_id = ? WHERE id = ?")->execute([$rzpRefund['id'], $refundId]);
+            $pdo->prepare("UPDATE payments SET status = 'refunded' WHERE id = ?")->execute([$refund['payment_id']]);
+            // Notify user
+            $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, 'Refund Processed ✅', ?)")
+                ->execute([$refund['user_id'], "Your refund of ₹{$refund['refund_amount']} for Order #{$refund['order_id']} has been processed and will reflect in 3–7 working days."]);
+            $pdo->commit();
+            respond(true, "Refund of ₹{$refund['refund_amount']} processed successfully.", ['rzp_refund_id' => $rzpRefund['id']]);
+        } catch (\Exception $e) {
+            $pdo->rollBack();
+            respond(false, 'DB update failed after Razorpay success: ' . $e->getMessage());
+        }
+    } else {
+        $err = json_decode($response, true);
+        $msg = $err['error']['description'] ?? 'Unknown Razorpay error.';
+        respond(false, "Razorpay refund failed: $msg");
+    }
+}
+
+if ($action === 'reject_refund') {
+    $refundId = (int)($data['refund_id'] ?? 0);
+    $reason   = strip_tags($data['reason'] ?? 'Rejected by admin.');
+    if (!$refundId) respond(false, 'Invalid refund ID.');
+
+    $stmt = $pdo->prepare("SELECT * FROM refunds WHERE id = ? AND status = 'requested'");
+    $stmt->execute([$refundId]);
+    $refund = $stmt->fetch();
+    if (!$refund) respond(false, 'Refund not found or already processed.');
+
+    try {
+        $pdo->beginTransaction();
+        $pdo->prepare("UPDATE refunds SET status = 'failed' WHERE id = ?")->execute([$refundId]);
+        $pdo->prepare("UPDATE payments SET status = 'completed' WHERE id = ?")->execute([$refund['payment_id']]);
+        $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, 'Refund Update', ?)")
+            ->execute([$refund['user_id'], "Your refund request for Order #{$refund['order_id']} was reviewed. Reason: $reason"]);
+        $pdo->commit();
+        respond(true, 'Refund request rejected.');
+    } catch (\Exception $e) {
+        $pdo->rollBack();
+        respond(false, 'DB Error: ' . $e->getMessage());
+    }
+}
+
 respond(false, 'Invalid action: ' . $action);
+

@@ -657,7 +657,7 @@ async function loadActivity() {
             <div class="act-dot"><i class="material-icons-outlined">receipt</i></div>
             <div style="flex:1">
                 <div class="act-text">Order #${o.id} — ${statusIcon[o.status]||''} ${o.status.replace(/_/g,' ').toUpperCase()}</div>
-                <div class="act-sub">₹${o.total_amount} · ${new Date(o.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</div>
+                <div class="act-sub">₹${o.total_amount} · ${fmtDate(o.created_at,{day:'2-digit',month:'short'})}</div>
             </div>
             ${statusBadge(o.status)}
         </div>
@@ -667,6 +667,14 @@ async function loadActivity() {
 function statusBadge(s) {
     const m = { pending:'b-amber', picked_up:'b-blue', in_process:'b-blue', out_for_delivery:'b-purple', delivered:'b-green', cancelled:'b-red' };
     return `<span class="badge ${m[s]||'b-gray'}">${s.replace(/_/g,' ')}</span>`;
+}
+
+// ── IST-aware date formatter (fixes UTC vs IST issue on Hostinger) ──
+// MySQL now returns IST strings. Append +05:30 so JS parses correctly regardless of browser/server locale.
+function fmtDate(ts, opts) {
+    if (!ts) return '—';
+    const d = new Date(ts.replace(' ', 'T') + '+05:30');
+    return d.toLocaleString('en-IN', opts);
 }
 
 // ── Product Catalog ───────────────────────────────────────────
@@ -950,7 +958,7 @@ async function loadOrders(type, tabEl) {
                 <div class="order-row-top">
                     <div>
                         <div class="order-id">Order #${o.id} <span style="font-size:0.7rem;color:var(--muted);font-weight:600;background:#f1f5f9;padding:2px 6px;border-radius:4px;margin-left:5px;">💳 ${o.payment_mode ? o.payment_mode.replace(/_/g,' ') : 'Unknown'}</span></div>
-                        <div class="order-meta">₹${o.total_amount} · ${new Date(o.created_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+                        <div class="order-meta">₹${o.total_amount} · ${fmtDate(o.created_at,{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
                     </div>
                     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                         <a href="../api/invoice.php?action=download_order_pdf&order_id=${o.id}" target="_blank" class="btn btn-sm btn-ghost" style="border:1px solid #cbd5e1;"><i class="material-icons-outlined" style="font-size:.9rem;margin-right:4px;">receipt_long</i> Invoice</a>
@@ -966,7 +974,27 @@ async function loadOrders(type, tabEl) {
                         <strong>Items:</strong> ${o.items.map(it => `${it.product_name} (${it.size_label}) × ${it.quantity}`).join(', ')}
                     </div>
                 ` : ''}
+                ${o.status === 'cancelled' && o.payment_status ? (() => {
+                    if (o.payment_status === 'refund_requested') return `
+                        <div style="display:flex;align-items:center;gap:10px;background:#fffbeb;border:1.5px solid #fbbf24;border-radius:10px;padding:0.7rem 1rem;margin-top:0.75rem;">
+                            <i class="material-icons-outlined" style="color:#d97706;font-size:1.3rem;">hourglass_empty</i>
+                            <div>
+                                <div style="font-weight:700;color:#92400e;font-size:0.85rem;">⏳ Refund Pending Admin Approval</div>
+                                <div style="font-size:0.75rem;color:#b45309;margin-top:2px;">Your refund of ₹${o.total_amount} is under review. You'll be notified once approved.</div>
+                            </div>
+                        </div>`;
+                    if (o.payment_status === 'refunded') return `
+                        <div style="display:flex;align-items:center;gap:10px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:0.7rem 1rem;margin-top:0.75rem;">
+                            <i class="material-icons-outlined" style="color:#16a34a;font-size:1.3rem;">check_circle</i>
+                            <div>
+                                <div style="font-weight:700;color:#14532d;font-size:0.85rem;">✅ Refund Processed</div>
+                                <div style="font-size:0.75rem;color:#15803d;margin-top:2px;">Your refund of ₹${o.total_amount} has been processed. It may take 3–7 working days to reflect.</div>
+                            </div>
+                        </div>`;
+                    return '';
+                })() : ''}
             </div>`;
+
     }).join('');
 }
 

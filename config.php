@@ -51,6 +51,10 @@ $options = [
 
 try {
     $pdo = new PDO($dsn, $user, $pass, $options);
+    // ── Timezone: Force IST (UTC+5:30) for both PHP and MySQL ──
+    date_default_timezone_set('Asia/Kolkata');
+    $pdo->exec("SET time_zone = '+05:30'");
+
 } catch (\PDOException $e) {
     // In production, we don't output $e->getMessage() explicitly to users
     error_log("Database Connection Failed: " . $e->getMessage()); // Log error to PHP error log

@@ -181,7 +181,7 @@ CREATE TABLE IF NOT EXISTS `payments` (
   `user_id`        INT(11) NOT NULL,
   `order_id`       INT(11) NOT NULL,
   `payment_mode`   ENUM('COD','ONLINE','PAY_LATER_4','PAY_LATER_8','PAY_LATER_12') DEFAULT 'COD',
-  `status`         ENUM('remaining','completed') DEFAULT 'remaining',
+  `status`         ENUM('remaining','completed','refund_requested','refunded') DEFAULT 'remaining',
   `amount`         DECIMAL(10,2) NOT NULL,
   `rzp_order_id`   VARCHAR(100) DEFAULT NULL,
   `rzp_payment_id` VARCHAR(100) DEFAULT NULL,
@@ -193,6 +193,21 @@ CREATE TABLE IF NOT EXISTS `payments` (
   KEY `status` (`status`),
   CONSTRAINT `payments_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
   CONSTRAINT `payments_ibfk_2` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ── refunds ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `refunds` (
+  `id`             INT(11) NOT NULL AUTO_INCREMENT,
+  `user_id`        INT(11) NOT NULL,
+  `order_id`       INT(11) NOT NULL,
+  `payment_id`     INT(11) DEFAULT NULL,
+  `refund_amount`  DECIMAL(10,2) NOT NULL,
+  `rzp_refund_id`  VARCHAR(100) DEFAULT NULL,
+  `status`         ENUM('requested','processed','failed') DEFAULT 'requested',
+  `created_at`     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  KEY `order_id` (`order_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- ── coupon_usages ────────────────────────────────────────

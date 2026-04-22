@@ -186,25 +186,8 @@ HTML;
 $payChipClass = ($order['payment_status'] === 'paid') ? 'paid-chip' : 'due-chip';
 $html = str_replace('{$payChip}', $payChipClass, $html);
 
-// Render with dompdf
-$autoload = __DIR__ . '/../vendor/autoload.php';
-if (!file_exists($autoload)) {
-    // Fallback: output HTML if dompdf not installed
-    header('Content-Type: text/html');
-    echo $html;
-    exit;
-}
-require_once $autoload;
-use Dompdf\Dompdf;
-use Dompdf\Options;
-
-$options = new Options();
-$options->set('isHtml5ParserEnabled', true);
-$options->set('isRemoteEnabled', false);
-$options->set('defaultFont', 'DejaVu Sans');
-
-$dompdf = new Dompdf($options);
-$dompdf->loadHtml($html);
-$dompdf->setPaper('A4', 'portrait');
-$dompdf->render();
-$dompdf->stream("DigiMarket_Invoice_{$invoiceNo}.pdf", ['Attachment' => false]);
+// Render directly to browser for Native HTML Printing
+$html .= "<script>window.onload = function() { window.print(); setTimeout(function(){ window.close(); }, 500); }</script>";
+header('Content-Type: text/html; charset=utf-8');
+echo $html;
+exit;

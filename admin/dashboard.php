@@ -16,10 +16,10 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     <style>
         :root { --sidebar-w: 240px; }
         body { background: #f1f5f9; }
-        .admin-wrap { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
+        .admin-wrap { display: grid; grid-template-columns: var(--sidebar-w) 1fr; height: 100vh; overflow: hidden; }
 
         /* ── Sidebar ── */
-        .sidebar { background: #1e293b; padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: 0.25rem; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+        .sidebar { background: #1e293b; padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: 0.25rem; height: 100vh; overflow-y: auto; }
         .sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0.5rem 0.75rem 1.5rem; color: white; font-size: 1.2rem; font-weight: 800; }
         .sidebar-brand i { color: #6366f1; }
         .menu-item { display: flex; align-items: center; gap: 12px; padding: 0.75rem 1rem; border-radius: 10px; color: #94a3b8; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; }
@@ -30,7 +30,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
         .badge-count { background: #ef4444; color: white; border-radius: 999px; font-size: 0.7rem; padding: 1px 6px; margin-left: auto; }
 
         /* ── Main Content ── */
-        .main-content { padding: 2rem; overflow-x: hidden; }
+        .main-content { padding: 2rem; overflow-y: auto; height: 100vh; }
         .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
         .page-title { font-size: 1.6rem; font-weight: 800; color: #1e293b; }
         .page-title span { color: #6366f1; }
@@ -165,6 +165,10 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             <i class="material-icons-outlined">shopping_cart_checkout</i> Store Orders
         </a>
         <div class="sidebar-section">Support</div>
+        <div class="menu-item" id="nav-refunds" onclick="switchTab('refunds',this)">
+            <i class="material-icons-outlined">currency_rupee</i> Refunds
+            <span class="badge-count" id="refundsBadge" style="display:none">0</span>
+        </div>
         <div class="menu-item" id="nav-messages" onclick="switchTab('messages',this)">
             <i class="material-icons-outlined">forum</i> Messages
             <span class="badge-count" id="msgBadge" style="display:none">0</span>
@@ -285,6 +289,28 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             <div class="panel">
                 <div class="panel-header"><div class="panel-title">All Delivery Partners</div></div>
                 <div id="partnersContainer"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></div>
+            </div>
+        </section>
+
+        <!-- ══ REFUNDS ══ -->
+        <section id="refunds" class="section-content">
+            <div class="top-bar">
+                <div class="page-title">Refund <span>Requests</span></div>
+                <button class="btn-sm btn-outline btn-lg" onclick="loadRefunds(currentRefundFilter, null)">↻ Refresh</button>
+            </div>
+            <div class="filter-chips">
+                <div class="chip active" id="rfChip-requested" onclick="loadRefunds('requested',this)">⏳ Pending</div>
+                <div class="chip" id="rfChip-processed" onclick="loadRefunds('processed',this)">✅ Processed</div>
+                <div class="chip" id="rfChip-failed" onclick="loadRefunds('failed',this)">❌ Rejected</div>
+                <div class="chip" id="rfChip-all" onclick="loadRefunds('all',this)">All</div>
+            </div>
+            <div class="panel">
+                <div class="tbl-wrap">
+                    <table>
+                        <thead><tr><th>#</th><th>Customer</th><th>Order</th><th>Amount</th><th>Razorpay Pay ID</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+                        <tbody id="refundsBody"><tr><td colspan="8"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
+                    </table>
+                </div>
             </div>
         </section>
 
@@ -637,6 +663,23 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     </div>
 </div>
 
+<!-- Reject Refund Modal -->
+<div class="modal-overlay" id="rejectRefundModal">
+    <div class="modal-box" style="max-width:420px;">
+        <button class="modal-close" onclick="closeModal('rejectRefundModal')">✕</button>
+        <div class="modal-title">Reject Refund Request</div>
+        <p style="font-size:0.88rem;color:#64748b;margin:0.5rem 0 1rem">Provide a reason. The customer will be notified.</p>
+        <div class="form-group">
+            <label>Rejection Reason</label>
+            <textarea id="rejectRefundReason" class="form-control" rows="3" placeholder="e.g. Order was inspected and no issue found…" style="width:100%;resize:vertical;"></textarea>
+        </div>
+        <div style="display:flex;gap:0.75rem;margin-top:1rem;">
+            <button class="btn-sm btn-danger btn-lg" style="flex:1;" onclick="confirmRejectRefund()">Reject & Notify User</button>
+            <button class="btn-sm btn-ghost btn-lg" onclick="closeModal('rejectRefundModal')">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <script>
 const csrf = "<?= $_SESSION['csrf_token'] ?? '' ?>";
 
@@ -668,6 +711,7 @@ async function switchTab(id, el) {
     if (id === 'users') loadUsers();
     if (id === 'partners') loadPartners();
     if (id === 'returns') loadReturns('all');
+    if (id === 'refunds') loadRefunds('requested', document.getElementById('rfChip-requested'));
     if (id === 'products') loadProducts();
     if (id === 'messages') loadMessages('all');
     if (id === 'invoices') {
@@ -700,6 +744,13 @@ function statusBadge(s) {
     return `<span class="badge ${map[s]||'b-gray'}">${s.replace(/_/g,' ').toUpperCase()}</span>`;
 }
 
+// ── IST-aware date formatter (fixes UTC vs IST on Hostinger) ──
+function fmtDate(ts, opts) {
+    if (!ts) return '\u2014';
+    const d = new Date(ts.replace(' ', 'T') + '+05:30');
+    return d.toLocaleString('en-IN', opts);
+}
+
 // ─────────────────────────────
 // OVERVIEW
 // ─────────────────────────────
@@ -717,6 +768,9 @@ async function loadStats() {
     const rb = document.getElementById('returnsBadge');
     if (d.pending_returns > 0) { rb.textContent = d.pending_returns; rb.style.display = 'inline'; }
     else rb.style.display = 'none';
+
+    // Refund badge — always reload from server
+    loadRefundBadge();
 }
 
 let revChart, distChart, ordChart;
@@ -758,6 +812,109 @@ async function loadAnalytics() {
 function refreshAll() { loadStats(); loadAnalytics(); }
 
 // ─────────────────────────────
+// REFUNDS
+// ─────────────────────────────
+let currentRefundFilter = 'requested';
+
+async function loadRefundBadge() {
+    const d = await api('get_refunds', { status: 'requested' });
+    const badge = document.getElementById('refundsBadge');
+    if (d.success && d.refunds && d.refunds.length > 0) {
+        badge.textContent = d.refunds.length;
+        badge.style.display = 'inline';
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
+async function loadRefunds(status, chipEl) {
+    currentRefundFilter = status;
+    document.querySelectorAll('[id^="rfChip-"]').forEach(c => c.classList.remove('active'));
+    if (chipEl) chipEl.classList.add('active');
+    else { const c = document.getElementById('rfChip-' + status); if (c) c.classList.add('active'); }
+
+    const tbody = document.getElementById('refundsBody');
+    tbody.innerHTML = '<tr><td colspan="8"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr>';
+
+    const d = await api('get_refunds', { status });
+    if (!d.success || !d.refunds || !d.refunds.length) {
+        tbody.innerHTML = '<tr><td colspan="8"><div class="no-data"><i class="material-icons-outlined">currency_rupee</i>No refund requests found.</div></td></tr>';
+        return;
+    }
+
+    const statusTag = (s) => {
+        if (s === 'requested') return '<span class="badge b-amber">⏳ PENDING APPROVAL</span>';
+        if (s === 'processed') return '<span class="badge b-green">✅ PROCESSED</span>';
+        if (s === 'failed')    return '<span class="badge b-red">❌ REJECTED</span>';
+        return '<span class="badge b-gray">' + s.toUpperCase() + '</span>';
+    };
+
+    tbody.innerHTML = d.refunds.map(r => `
+        <tr>
+            <td><strong>#${r.id}</strong></td>
+            <td>
+                <div style="font-weight:700">${r.user_name || '—'}</div>
+                <div style="font-size:0.78rem;color:#64748b">${r.user_phone || ''}</div>
+            </td>
+            <td><strong>Order #${r.order_id}</strong></td>
+            <td><strong style="color:#6366f1">₹${parseFloat(r.refund_amount).toFixed(2)}</strong></td>
+            <td><span style="font-size:0.78rem;color:#64748b;font-family:monospace">${r.rzp_payment_id || '<em>N/A</em>'}</span></td>
+            <td>${statusTag(r.status)}</td>
+            <td style="font-size:0.8rem">${fmtDate(r.created_at,{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
+            <td>
+                ${r.status === 'requested' ? `
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                    <button class="btn-sm btn-primary" onclick="approveRefund(${r.id}, this)" style="font-size:0.75rem;padding:4px 10px;display:flex;align-items:center;gap:4px">
+                        <i class="material-icons-outlined" style="font-size:0.9rem">check_circle</i> Approve
+                    </button>
+                    <button class="btn-sm btn-danger" onclick="openRejectModal(${r.id})" style="font-size:0.75rem;padding:4px 10px;display:flex;align-items:center;gap:4px">
+                        <i class="material-icons-outlined" style="font-size:0.9rem">cancel</i> Reject
+                    </button>
+                </div>` : r.rzp_refund_id ? `<span style="font-family:monospace;font-size:0.75rem;color:#10b981">${r.rzp_refund_id}</span>` : '—'}
+            </td>
+        </tr>`).join('');
+}
+
+async function approveRefund(refundId, btn) {
+    if (!confirm(`Approve refund #${refundId} and trigger Razorpay refund?`)) return;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="material-icons-outlined" style="font-size:0.9rem;animation:spin 1s linear infinite">autorenew</i> Processing…';
+    btn.disabled = true;
+    const d = await api('approve_refund', { refund_id: refundId });
+    if (d.success) {
+        toast('success', 'Refund Approved', d.message);
+        loadRefunds(currentRefundFilter, null);
+        loadRefundBadge();
+    } else {
+        toast('error', 'Refund Failed', d.message);
+        btn.innerHTML = orig;
+        btn.disabled = false;
+    }
+}
+
+let pendingRejectRefundId = null;
+function openRejectModal(refundId) {
+    pendingRejectRefundId = refundId;
+    document.getElementById('rejectRefundReason').value = '';
+    openModal('rejectRefundModal');
+}
+
+async function confirmRejectRefund() {
+    if (!pendingRejectRefundId) return;
+    const reason = document.getElementById('rejectRefundReason').value.trim() || 'Rejected by admin.';
+    closeModal('rejectRefundModal');
+    const d = await api('reject_refund', { refund_id: pendingRejectRefundId, reason });
+    pendingRejectRefundId = null;
+    if (d.success) {
+        toast('info', 'Refund Rejected', 'The customer has been notified.');
+        loadRefunds(currentRefundFilter, null);
+        loadRefundBadge();
+    } else {
+        toast('error', 'Rejection Failed', d.message);
+    }
+}
+
+// ─────────────────────────────
 // CUSTOMERS
 // ─────────────────────────────
 async function loadUsers() {
@@ -794,7 +951,7 @@ async function loadUsers() {
                     <span class="badge b-red">Declined</span>
                 ` : '<div style="font-size:0.8rem;color:#94a3b8">—</div>'}
             </td>
-            <td style="font-size:0.8rem">${new Date(u.created_at).toLocaleDateString()}</td>
+            <td style="font-size:0.8rem">${fmtDate(u.created_at,{day:'2-digit',month:'short',year:'numeric'})}</td>
             <td>${u.is_blocked ? '<span class="badge b-red">Blocked</span>' : '<span class="badge b-green">Active</span>'}</td>
             <td>
                 <div class="action-btns">
@@ -883,8 +1040,8 @@ async function viewUserOrders(userId, name) {
                     ${payBadge}
                 </td>
                 <td style="font-size:0.8rem; color:#475569">
-                    ${new Date(o.created_at).toLocaleDateString()}<br>
-                    <span style="font-size:0.7rem;color:#94a3b8">${new Date(o.created_at).toLocaleTimeString()}</span>
+                    ${fmtDate(o.created_at,{day:'2-digit',month:'short',year:'numeric'})}<br>
+                    <span style="font-size:0.7rem;color:#94a3b8">${fmtDate(o.created_at,{hour:'2-digit',minute:'2-digit'})}</span>
                 </td>
                 <td>
                     <a href="../api/invoice.php?action=download_order_pdf&order_id=${o.id}" target="_blank" class="btn-sm btn-outline" style="border-color:#cbd5e1;padding:2px 8px;font-size:.7rem;"><i class="material-icons-outlined" style="font-size:0.8rem;vertical-align:middle;">picture_as_pdf</i> PDF</a>
@@ -945,7 +1102,7 @@ async function loadOrders() {
                     ${makePartnerOpts(o.delivery_id)}
                 </select>` : (o.delivery_name||'—')}
             </td>
-            <td style="font-size:0.8rem">${new Date(o.created_at).toLocaleDateString()}</td>
+            <td style="font-size:0.8rem">${fmtDate(o.created_at,{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
             <td>
                 <div class="action-btns">
                     ${assignable ? `<select data-orderid="${o.id}" data-current="${o.status}" onchange="changeStatus(${o.id},this)" style="font-size:0.78rem;padding:3px 6px;border:1.5px solid #e2e8f0;border-radius:7px;">${statusOpts}</select>` : ''}

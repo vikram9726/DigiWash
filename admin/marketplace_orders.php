@@ -32,11 +32,11 @@ $partners = $stmt->fetchAll(PDO::FETCH_ASSOC);
             --border:#e2e8f0;
             --sidebar-w:240px;
         }
-        body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
-        .admin-wrap{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100vh;}
+        body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;}
+        .admin-wrap{display:grid;grid-template-columns:var(--sidebar-w) 1fr;height:100vh;overflow:hidden;}
         
         /* Sidebar */
-        .sidebar{background:var(--sidebar-bg);display:flex;flex-direction:column;padding:1.5rem 1rem;position:sticky;top:0;height:100vh;overflow-y:auto;}
+        .sidebar{background:var(--sidebar-bg);display:flex;flex-direction:column;padding:1.5rem 1rem;height:100vh;overflow-y:auto;}
         .sidebar-brand{display:flex;align-items:center;gap:10px;padding:0.5rem 0.75rem 1.5rem;color:white;font-size:1.2rem;font-weight:800;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:0.75rem;}
         .sidebar-brand i{color:#6366f1;}
         .menu-item{display:flex;align-items:center;gap:12px;padding:0.75rem 1rem;border-radius:10px;color:#94a3b8;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s;text-decoration:none;margin-bottom:5px;}
@@ -45,7 +45,7 @@ $partners = $stmt->fetchAll(PDO::FETCH_ASSOC);
         .menu-item i{font-size:1.2rem;}
 
         /* Main */
-        .main-content{padding:2rem;}
+        .main-content{padding:2rem;height:100vh;overflow-y:auto;}
         .top-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;flex-wrap:wrap;gap:1rem;}
         .page-title{font-size:1.6rem;font-weight:800;color:var(--text);}
         .page-title span{color:var(--primary);}

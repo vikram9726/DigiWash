@@ -51,7 +51,7 @@ if ($action === 'create_rzp_precheckout_order') {
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
     
     $res = json_decode(curl_exec($ch), true);
-    curl_close($ch);
+    // curl_close($ch);
 
     if (isset($res['id'])) {
         respond(true, 'Gateway ready', [
@@ -99,7 +99,7 @@ if ($action === 'create_rzp_order') {
 
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    // curl_close($ch);
 
     $resData = json_decode($response, true);
 
@@ -164,7 +164,7 @@ if ($action === 'create_bulk_rzp_order') {
     curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json", "Authorization: Basic $auth"]);
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    // curl_close($ch);
 
     $resData = json_decode($response, true);
 

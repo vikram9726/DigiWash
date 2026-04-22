@@ -50,7 +50,7 @@ if ($action === 'create_razorpay_order') {
     ]);
     $res  = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    // curl_close($ch);
 
     if ($code !== 200) respond(false, 'Razorpay error. Please try again.');
     $rzp = json_decode($res, true);
