@@ -1119,8 +1119,14 @@ async function openRefundTrackModal(rzpRefundId, orderId, refundAmt, reqDate, ap
         document.getElementById('rtk-speed').textContent = d.speed || 'N/A';
         document.getElementById('rtk-arn').textContent = d.arn || 'Pending / Check with Bank';
     } else {
+        document.getElementById('rtk-content').style.display = 'block';
+        document.getElementById('rtk-rzp-id').textContent = rzpRefundId;
+        const statusEl = document.getElementById('rtk-status');
+        statusEl.textContent = "ERROR";
+        statusEl.style.color = '#ef4444';
+        document.getElementById('rtk-speed').textContent = d.message || 'Unknown Error';
+        document.getElementById('rtk-arn').textContent = 'Please check console or network tab.';
         toast('error', 'Tracking Failed', d.message);
-        closeModal('refundTrackModal');
     }
 }
 
