@@ -12,6 +12,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     <title>DigiWash - Admin Panel</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/style.css">
+    <link rel="stylesheet" href="../assets/css/mobile.css">
+    <script src="../assets/js/mobile-nav.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
     <style>
         :root { --sidebar-w: 240px; }
@@ -126,6 +128,21 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     </style>
 </head>
 <body>
+
+<!-- ── Mobile Top Bar (Admin) ── -->
+<header class="dw-top-bar" id="dwTopBar">
+    <div class="tb-brand">
+        <i class="material-icons-outlined" style="color:var(--c-primary);">local_laundry_service</i>
+        <span>Admin Panel</span>
+    </div>
+    <div class="tb-right">
+        <div class="tb-notif" onclick="switchTab('notifications', document.getElementById('nav-notifications'))" title="Notifications">
+            <i class="material-icons-outlined" style="font-size:1.4rem;">notifications</i>
+        </div>
+        <div class="tb-avatar" style="background:linear-gradient(135deg,#6366f1,#4f46e5);" title="Admin">A</div>
+    </div>
+</header>
+
 <div class="admin-wrap">
     <!-- ── SIDEBAR ── -->
     <aside class="sidebar">
@@ -192,7 +209,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     </aside>
 
     <!-- ── MAIN ── -->
-    <main class="main-content">
+    <main class="main-content dw-content">
 
         <!-- ══ OVERVIEW ══ -->
         <section id="overview" class="section-content active">
@@ -1959,5 +1976,45 @@ async function deleteMessage(id) {
     } catch(e) { toast('error', 'Error', 'Network error.'); }
 }
 </script>
+<!-- ── Mobile Bottom Navigation (Admin) ── -->
+<nav class="dw-bottom-nav" id="dwBottomNav" role="navigation" aria-label="Admin navigation">
+    <ul>
+        <li>
+            <button class="bn-item active" data-tab="dashboard"
+                onclick="switchTab('dashboard', document.getElementById('nav-dashboard'))" aria-label="Dashboard">
+                <i class="material-icons-outlined">dashboard</i>
+                <span>Overview</span>
+            </button>
+        </li>
+        <li>
+            <button class="bn-item" data-tab="orders"
+                onclick="switchTab('orders', document.getElementById('nav-orders'))" aria-label="Orders">
+                <i class="material-icons-outlined">receipt_long</i>
+                <span>Orders</span>
+            </button>
+        </li>
+        <li>
+            <button class="bn-item" data-tab="users"
+                onclick="switchTab('users', document.getElementById('nav-users'))" aria-label="Users">
+                <i class="material-icons-outlined">group</i>
+                <span>Users</span>
+            </button>
+        </li>
+        <li>
+            <button class="bn-item" data-tab="refunds"
+                onclick="switchTab('refunds', document.getElementById('nav-refunds'))" aria-label="Refunds">
+                <i class="material-icons-outlined">currency_rupee</i>
+                <span>Refunds</span>
+            </button>
+        </li>
+        <li>
+            <button class="bn-item" data-tab="settings"
+                onclick="switchTab('settings', document.getElementById('nav-settings'))" aria-label="Settings">
+                <i class="material-icons-outlined">settings</i>
+                <span>Settings</span>
+            </button>
+        </li>
+    </ul>
+</nav>
 </body>
 </html>

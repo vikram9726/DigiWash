@@ -61,6 +61,8 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js" defer></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-messaging-compat.js" defer></script>
     <link rel="stylesheet" href="../assets/css/style.css">
+    <link rel="stylesheet" href="../assets/css/mobile.css">
+    <script src="../assets/js/mobile-nav.js"></script>
     <style>
         /* Toast Notifications */
         #toast-wrap { position:fixed; top:20px; right:20px; z-index:99999; display:flex; flex-direction:column; gap:12px; }
@@ -81,6 +83,21 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
 </head>
 <body>
 <div id="toast-wrap"></div>
+
+<!-- ── Mobile Top Bar ── -->
+<header class="dw-top-bar" id="dwTopBar">
+    <div class="tb-brand">
+        <i class="material-icons-outlined">local_laundry_service</i>
+        <span>DigiWash</span>
+    </div>
+    <div class="tb-right">
+        <div class="tb-notif" id="mobileNotifBtn" onclick="switchTab('notifications', document.getElementById('nav-notifications'))" title="Notifications">
+            <i class="material-icons-outlined" style="font-size:1.4rem;">notifications</i>
+            <span class="notif-dot" id="mobileNotifDot" style="display:none;"></span>
+        </div>
+        <div class="tb-avatar" title="<?= $userName ?>"><?= strtoupper(substr($userName,0,1)) ?></div>
+    </div>
+</header>
 
 <div class="app-wrap">
     <!-- ── SIDEBAR ── -->
@@ -143,7 +160,7 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
     </aside>
 
     <!-- ── MAIN ── -->
-    <main class="main">
+    <main class="main dw-content">
 
         <!-- GLOBAL TOP NAV -->
         <div class="header-actions">
@@ -1922,5 +1939,44 @@ document.addEventListener('DOMContentLoaded', () => {
 <div style="text-align:center; padding: 20px; font-size: 0.8rem; color: #94a3b8; font-weight: bold;">
     DigiWash User Dashboard v2.1-RefundTracking (Updated)
 </div>
+<!-- ── Mobile Bottom Navigation (Customer) ── -->
+<nav class="dw-bottom-nav" id="dwBottomNav" role="navigation" aria-label="Customer navigation">
+    <ul>
+        <li>
+            <button class="bn-item active" data-tab="home" aria-label="Home"
+                onclick="switchTab('home', document.getElementById('nav-home'))">
+                <i class="material-icons-outlined">home</i>
+                <span>Home</span>
+            </button>
+        </li>
+        <li>
+            <button class="bn-item" data-tab="orders" aria-label="My Orders"
+                onclick="switchTab('orders', document.getElementById('nav-orders'))">
+                <i class="material-icons-outlined">receipt_long</i>
+                <span>Orders</span>
+            </button>
+        </li>
+        <li style="display:flex;align-items:center;justify-content:center;">
+            <button class="bn-item bn-qr" data-tab="_place" aria-label="Place Order" title="Place Order"
+                onclick="switchTab('placeOrder', document.getElementById('nav-placeOrder'))">
+                <i class="material-icons-outlined">add_shopping_cart</i>
+            </button>
+        </li>
+        <li>
+            <button class="bn-item" data-tab="marketplace" aria-label="Marketplace"
+                onclick="switchTab('marketplace', document.getElementById('nav-marketplace'))">
+                <i class="material-icons-outlined">storefront</i>
+                <span>Market</span>
+            </button>
+        </li>
+        <li>
+            <button class="bn-item" data-tab="profile" aria-label="Profile"
+                onclick="switchTab('profile', document.getElementById('nav-profile'))">
+                <i class="material-icons-outlined">person</i>
+                <span>Profile</span>
+            </button>
+        </li>
+    </ul>
+</nav>
 </body>
 </html>

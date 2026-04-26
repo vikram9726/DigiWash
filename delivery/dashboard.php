@@ -16,6 +16,8 @@ $isOnline = (int)$stmt->fetchColumn() === 1;
     <title>DigiWash - Delivery Hub</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/style.css">
+    <link rel="stylesheet" href="../assets/css/mobile.css">
+    <script src="../assets/js/mobile-nav.js"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript" defer></script>
     <style>
         :root { --sidebar-w: 230px; }
@@ -118,6 +120,22 @@ $isOnline = (int)$stmt->fetchColumn() === 1;
     </style>
 </head>
 <body>
+
+<!-- ── Mobile Top Bar ── -->
+<header class="dw-top-bar" id="dwTopBar">
+    <div class="tb-brand">
+        <i class="material-icons-outlined">two_wheeler</i>
+        <span>Delivery Hub</span>
+    </div>
+    <div class="tb-right">
+        <label class="toggle-switch" title="Toggle online status">
+            <input type="checkbox" id="onlineToggleMobile" onchange="toggleOnline(this.checked)" <?= $isOnline ? 'checked' : '' ?>>
+            <span class="toggle-track"></span>
+        </label>
+        <div class="tb-avatar" title="<?= htmlspecialchars($partnerName) ?>"><?= strtoupper(substr($partnerName,0,1)) ?></div>
+    </div>
+</header>
+
 <div class="hub-wrap">
     <!-- ── SIDEBAR ── -->
     <aside class="sidebar">
@@ -168,7 +186,7 @@ $isOnline = (int)$stmt->fetchColumn() === 1;
     </aside>
 
     <!-- ── MAIN ── -->
-    <main class="main">
+    <main class="main dw-content">
 
         <!-- Stats always visible at top -->
         <div class="stats-row" id="statsRow">
@@ -230,6 +248,41 @@ $isOnline = (int)$stmt->fetchColumn() === 1;
 
     </main>
 </div>
+
+<!-- ── Mobile Bottom Navigation ── -->
+<nav class="dw-bottom-nav" id="dwBottomNav" role="navigation" aria-label="Main navigation">
+    <ul>
+        <li>
+            <button class="bn-item active" data-tab="pickups" aria-label="Pickups">
+                <i class="material-icons-outlined">hail</i>
+                <span>Pickups</span>
+            </button>
+        </li>
+        <li>
+            <button class="bn-item" data-tab="inprocess" aria-label="In Process">
+                <i class="material-icons-outlined">local_laundry_service</i>
+                <span>Processing</span>
+            </button>
+        </li>
+        <li style="display:flex;align-items:center;justify-content:center;">
+            <button class="bn-item bn-qr" data-tab="_qr" aria-label="Scan QR Code" title="Scan QR">
+                <i class="material-icons-outlined">qr_code_scanner</i>
+            </button>
+        </li>
+        <li>
+            <button class="bn-item" data-tab="deliveries" aria-label="Deliveries">
+                <i class="material-icons-outlined">local_shipping</i>
+                <span>Deliver</span>
+            </button>
+        </li>
+        <li>
+            <button class="bn-item" data-tab="completed" aria-label="Completed">
+                <i class="material-icons-outlined">task_alt</i>
+                <span>Done</span>
+            </button>
+        </li>
+    </ul>
+</nav>
 
 <!-- ══════════ MODALS ══════════ -->
 
@@ -708,7 +761,41 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 document.addEventListener('DOMContentLoaded', () => {
     loadStats();
     loadSection('pickups');
+
+    // ── Mobile bottom nav wiring ──
+    dwBottomNav.init({
+        navId: 'dwBottomNav',
+        defaultTab: 'pickups',
+        onSwitch: (tabId) => {
+            if (tabId === '_qr') {
+                // QR button — open scan modal directly (find first delivery order)
+                const firstDelivery = document.querySelector('#deliveriesContainer .btn-action[onclick*="openQRModal"]');
+                if (firstDelivery) {
+                    firstDelivery.click();
+                } else {
+                    switchTab('deliveries', null);
+                    dw_toast('Select an order to scan QR', 'info');
+                }
+                // Restore active tab highlight
+                setTimeout(() => dwBottomNav.setActive(currentActiveTab), 100);
+                return;
+            }
+            currentActiveTab = tabId;
+            switchTab(tabId, null);
+        }
+    });
 });
+
+let currentActiveTab = 'pickups';
+
+// Sync bottom nav badge with sidebar badge updates
+const _origSetBadge = setBadge;
+window.setBadge = function(id, count) {
+    _origSetBadge(id, count);
+    const tabMap = { badgePickups:'pickups', badgeInprocess:'inprocess', badgeDeliveries:'deliveries' };
+    const tab = tabMap[id];
+    if (tab) dwBottomNav.setBadge(tab, parseInt(count) || 0);
+};
 
 async function loadMarketDataForSection(sectionType, container) {
     const tabsHtml = renderSysTabs(sectionType);
