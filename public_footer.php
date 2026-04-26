@@ -259,7 +259,6 @@
 
         const errorMsg = document.getElementById('errorMsg');
         function showError(text) { if(errorMsg) { errorMsg.innerText = text; errorMsg.style.display = 'block'; } }
-        let confirmationResult = null;
 
         // ── Phone Submit ─────────────────────────────────────────────────────────
         document.getElementById('phoneLoginForm').addEventListener('submit', async (e) => {
