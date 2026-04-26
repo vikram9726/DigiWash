@@ -268,61 +268,40 @@ if ($action === 'complete_delivery_otp') {
     }
 }
 
-// --- BYPASS DELIVERY (QR UPLOAD) ---
+// --- DELIVER VIA ENCRYPTED ORDER QR ---
 if ($action === 'complete_delivery_qr') {
-    $orderId = filter_var($data['order_id'] ?? '', FILTER_VALIDATE_INT);
-    $qrHash = htmlspecialchars(strip_tags($data['qr_hash'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $encToken = $data['qr_token'] ?? '';
+    if (empty($encToken)) respond(false, 'QR token is required.');
 
-    if (!$orderId || empty($qrHash)) {
-        respond(false, 'Order ID and QR Code Hash are required.');
-    }
+    $orderId = decrypt_order_token($encToken);
+    if (!$orderId) respond(false, 'Invalid or tampered QR code.');
 
-    // Verify order belongs to this delivery partner and is in-process
-    $stmt = $pdo->prepare("
-        SELECT o.id, o.user_id, u.qr_code_hash
-        FROM orders o
-        JOIN users u ON o.user_id = u.id
-        WHERE o.id = ? AND o.delivery_id = ? AND o.status = 'out_for_delivery'
-    ");
+    $stmt = $pdo->prepare("SELECT o.id, o.user_id FROM orders o WHERE o.id = ? AND o.delivery_id = ? AND o.status = 'out_for_delivery'");
     $stmt->execute([$orderId, $deliveryId]);
     $order = $stmt->fetch();
-
-    if (!$order) {
-        respond(false, 'Order not found or not currently out for delivery by you.');
-    }
-
-    // Verify QR Hash matches the customer
-    if (empty($order['qr_code_hash']) || $order['qr_code_hash'] !== $qrHash) {
-        respond(false, 'Invalid QR Code. This QR code does not match the customer for this order.');
-    }
+    if (!$order) respond(false, 'Order not found, not assigned to you, or not ready for delivery.');
 
     try {
         $pdo->beginTransaction();
-
-        // Mark order as delivered
         $pdo->prepare("UPDATE orders SET status = 'delivered', delivered_at = NOW(), updated_at = NOW() WHERE id = ?")
             ->execute([$orderId]);
-
-        // Decrement active orders load
-        $pdo->prepare("UPDATE users SET current_orders = GREATEST(0, current_orders - 1) WHERE id = ?")->execute([$deliveryId]);
-
-        // Automatically update the related payment to completed
+        $pdo->prepare("UPDATE users SET current_orders = GREATEST(0, current_orders - 1) WHERE id = ?")
+            ->execute([$deliveryId]);
         $pdo->prepare("UPDATE payments SET status = 'completed', updated_at = NOW() WHERE order_id = ?")
             ->execute([$orderId]);
-            
         $ownerId = $order['user_id'];
-        $title = "Delivery Verified via QR";
-        $msg = "Order #$orderId was successfully scanned and securely delivered to your location. Thank you!";
+        $title = 'Delivery Verified via QR \u2705';
+        $msg   = "Order #$orderId scanned and delivered. Thank you for choosing DigiWash!";
         $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)")->execute([$ownerId, $title, $msg]);
         sendPushNotification($pdo, $ownerId, $title, $msg);
-
         $pdo->commit();
-        respond(true, 'Delivery completed successfully via QR Scan!');
+        respond(true, 'Delivery completed via QR Scan!');
     } catch (\Exception $e) {
         $pdo->rollBack();
-        respond(false, 'Database error during completion.');
+        respond(false, 'Database error.');
     }
 }
+
 
 if ($action === 'complete_delivery_bypass') {
     $orderId = $_POST['order_id'] ?? 0;

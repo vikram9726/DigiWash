@@ -43,24 +43,22 @@
         </div>
     </footer>
 
-    <!-- Auth Modal -->
+    <!-- Auth Modal (Unified — all roles) -->
     <div class="auth-modal-overlay" id="authModalOverlay">
         <div class="auth-modal-box">
             <button class="auth-modal-close" onclick="closeAuthModal()">
                 <i class="material-icons-outlined">close</i>
             </button>
-            
             <div style="text-align:center; margin-bottom:1.5rem;">
                 <i class="material-icons-outlined" style="font-size: 2.5rem; color: #6366f1; background: rgba(99, 102, 241, 0.1); padding: 0.8rem; border-radius: 20px;">local_laundry_service</i>
             </div>
 
-            <!-- CUSTOMER LOGIN -->
+            <!-- STEP 1: PHONE -->
             <div id="loginStep" class="auth-view active">
                 <div style="text-align:center; margin-bottom:1.5rem;">
-                    <h2 style="font-size: 1.5rem; margin-bottom:0.2rem; color:#0f172a">Welcome Back</h2>
-                    <p style="margin-bottom:0; font-size:0.9rem; color:#64748b">Log in or create a new account.</p>
+                    <h2 style="font-size: 1.5rem; margin-bottom:0.2rem; color:#0f172a">Welcome to DigiWash</h2>
+                    <p style="margin-bottom:0; font-size:0.9rem; color:#64748b">Customers, staff &amp; admins — one login.</p>
                 </div>
-
                 <button class="google-btn" onclick="startGoogleLogin()">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="20" height="20" style="margin-right:12px;flex-shrink:0;">
                         <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
@@ -70,102 +68,63 @@
                     </svg>
                     Continue with Google
                 </button>
-
                 <div class="divider">or</div>
-
                 <form id="phoneLoginForm">
                     <div class="form-group">
                         <label>Mobile Number</label>
                         <div class="phone-input-wrap">
                             <span class="prefix">+91</span>
                             <input type="tel" id="phone" name="phone" placeholder="Enter 10-digit number"
-                                required maxlength="10" pattern="[0-9]{10}" inputmode="numeric"
+                                required maxlength="10" inputmode="numeric" autocomplete="off"
                                 oninput="this.value=this.value.replace(/[^0-9]/g,'').substring(0,10)">
                         </div>
                     </div>
-                    
-                    <div id="recaptcha-container" style="margin-bottom: 1rem;"></div>
-                    
-                    <button type="submit" class="btn btn-primary" id="loginBtn">
+                    <!-- Cloudflare Turnstile widget -->
+                    <div class="cf-turnstile" id="cfTurnstile"
+                         data-sitekey="<?= getTurnstileSiteKey() ?>"
+                         data-callback="onTurnstileSuccess"
+                         data-error-callback="onTurnstileError"
+                         data-expired-callback="onTurnstileExpired"
+                         data-theme="light"
+                         style="margin-bottom:1rem;"></div>
+                    <!-- Hidden Firebase reCAPTCHA anchor (required internally by Firebase SDK) -->
+                    <div id="recaptcha-container" style="display:none;"></div>
+                    <button type="submit" class="btn btn-primary" id="loginBtn" disabled>
                         Send OTP <i class="material-icons-outlined" style="font-size:1.1rem;">arrow_forward</i>
                     </button>
-                    <p id="errorMsg" style="color: #ef4444; margin-top: 1rem; display: none; font-weight: 600; text-align:center; font-size:0.85rem; background:#fee2e2; padding:0.5rem; border-radius:8px;"></p>
-                    
-                    <div style="margin-top: 1.5rem; text-align: center;">
-                        <span style="color:var(--l-text-muted); font-size:0.85rem;">Are you a team member?</span><br>
-                        <a href="javascript:void(0)" onclick="toggleStaffLogin()" style="color: #6366f1; font-weight: 700; font-size: 0.85rem; text-decoration:none;">Staff / Delivery Login →</a>
-                    </div>
+                    <p id="errorMsg" style="color:#ef4444;margin-top:1rem;display:none;font-weight:600;text-align:center;font-size:0.85rem;background:#fee2e2;padding:0.5rem;border-radius:8px;"></p>
                 </form>
             </div>
 
-            <!-- STAFF LOGIN -->
-            <div id="staffStep" class="auth-view">
-                <div style="text-align:center; margin-bottom:1.5rem;">
-                    <i class="material-icons-outlined" style="font-size:2.5rem; color:#6366f1; background:rgba(99,102,241,0.1); padding:0.8rem; border-radius:20px;">badge</i>
-                    <h2 style="font-size: 1.5rem; margin-bottom:0.2rem; color:#0f172a; margin-top:0.8rem;">Staff Portal</h2>
-                    <p style="margin-bottom:0; font-size:0.9rem; color:#64748b">Enter your registered phone to receive a real OTP.</p>
-                </div>
-
-                <form id="staffLoginForm">
-                    <div class="form-group">
-                        <label>Registered Mobile Number</label>
-                        <div class="phone-input-wrap">
-                            <span class="prefix">+91</span>
-                            <input type="tel" id="staffPhone" placeholder="10-digit number" required maxlength="10" pattern="[0-9]{10}" inputmode="numeric"
-                                oninput="this.value=this.value.replace(/[^0-9]/g,'').substring(0,10)">
-                        </div>
-                    </div>
-
-                    <div id="staff-recaptcha-container" style="margin-bottom:1rem;"></div>
-
-                    <button type="submit" class="btn btn-primary" id="staffSendOtpBtn" style="margin-top:0.5rem;">
-                        Send OTP <i class="material-icons-outlined" style="font-size:1.1rem;">send</i>
-                    </button>
-                    <button type="button" class="btn btn-ghost" onclick="toggleStaffLogin()" style="margin-top:0.5rem;">&#8592; Back</button>
-                    <p id="staffError" style="color: #ef4444; margin-top: 1rem; display: none; font-weight: 600; text-align:center; font-size:0.85rem; background:#fee2e2; padding:0.5rem; border-radius:8px;"></p>
-                </form>
-            </div>
-
-            <!-- STAFF OTP STEP -->
-            <div id="staffOtpStep" class="auth-view">
-                <div style="text-align:center; margin-bottom:1.5rem;">
-                    <i class="material-icons-outlined" style="font-size:3rem; color:#6366f1; margin-bottom:0.5rem;">admin_panel_settings</i>
-                    <h2 style="font-size: 1.5rem; margin-bottom:0.2rem; color:#0f172a;">Staff Verification</h2>
-                    <p id="staffOtpSubtext" style="margin-bottom:0; font-size:0.9rem; color:#64748b">Enter the 6-digit code sent to your phone.</p>
-                </div>
-
-                <form id="staffOtpForm">
-                    <div class="form-group">
-                        <input type="text" id="staffOtpInput" placeholder="Enter 6-digit OTP" required maxlength="6" pattern="[0-9]{6}" inputmode="numeric"
-                            style="width:100%; border:2px solid #e2e8f0; border-radius:12px; text-align:center; font-size:1.5rem; letter-spacing:8px; font-weight:800; padding:1rem; outline:none; transition:border-color 0.3s; color:#0f172a;"
-                            onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#e2e8f0'"
-                            oninput="this.value=this.value.replace(/[^0-9]/g,'').substring(0,6)">
-                    </div>
-                    <button type="submit" class="btn btn-success" id="staffVerifyOtpBtn">Verify &amp; Enter Portal</button>
-                    <button type="button" class="btn btn-ghost" onclick="showView('staffStep')" style="margin-top:0.5rem;">&#8592; Change Number</button>
-                    <p id="staffOtpError" style="color:#ef4444; margin-top:1rem; display:none; font-weight:600; text-align:center; font-size:0.85rem; background:#fee2e2; padding:0.5rem; border-radius:8px;"></p>
-                </form>
-            </div>
-
-            <!-- OTP VERIFICATION -->
+            <!-- STEP 2: 6-BOX OTP -->
             <div id="otpStep" class="auth-view">
                 <div style="text-align:center; margin-bottom:1.5rem;">
                     <i class="material-icons-outlined" style="font-size:3rem; color:#6366f1; margin-bottom:0.5rem;">phonelink_lock</i>
                     <h2 style="font-size: 1.5rem; margin-bottom:0.2rem; color:#0f172a">Verify Phone</h2>
-                    <p style="margin-bottom:0; font-size:0.9rem; color:#64748b">Enter the 6-digit code sent via SMS.</p>
+                    <p id="otpSubtext" style="margin-bottom:0; font-size:0.9rem; color:#64748b">Enter the 6-digit code sent via SMS.</p>
                 </div>
-
                 <form id="otpForm">
-                    <div class="form-group">
-                        <input type="text" id="otpInput" placeholder="Enter 6-digit OTP" required pattern="[0-9]{6}" style="width: 100%; border: 2px solid #e2e8f0; border-radius: 12px; text-align:center; font-size:1.5rem; letter-spacing:8px; font-weight:800; padding:1rem; outline:none; transition:border-color 0.3s; color:#0f172a;" onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#e2e8f0'">
+                    <div id="otp-boxes" style="display:flex;gap:8px;justify-content:center;margin-bottom:1rem;">
+                        <input class="otp-box" type="text" inputmode="numeric" maxlength="1" autocomplete="off" spellcheck="false">
+                        <input class="otp-box" type="text" inputmode="numeric" maxlength="1" autocomplete="off" spellcheck="false">
+                        <input class="otp-box" type="text" inputmode="numeric" maxlength="1" autocomplete="off" spellcheck="false">
+                        <input class="otp-box" type="text" inputmode="numeric" maxlength="1" autocomplete="off" spellcheck="false">
+                        <input class="otp-box" type="text" inputmode="numeric" maxlength="1" autocomplete="off" spellcheck="false">
+                        <input class="otp-box" type="text" inputmode="numeric" maxlength="1" autocomplete="off" spellcheck="false">
                     </div>
-                    
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;font-size:.83rem;">
+                        <span style="color:#64748b;">Didn't get it? <span id="resendTimerTxt"></span></span>
+                        <button type="button" id="resendOtpBtn" disabled onclick="resendOtpModal()"
+                            style="background:none;border:none;color:#6366f1;font-weight:700;cursor:pointer;font-size:.83rem;">Resend</button>
+                    </div>
+                    <p id="otpError" style="color:#ef4444;display:none;font-weight:600;text-align:center;font-size:0.85rem;background:#fee2e2;padding:0.5rem;border-radius:8px;margin-bottom:1rem;"></p>
                     <button type="submit" class="btn btn-success" id="verifyOtpBtn">Secure Login</button>
-                    <button type="button" class="btn btn-ghost" onclick="location.reload()" style="margin-top:0.5rem;">Cancel</button>
+                    <button type="button" class="btn btn-ghost" onclick="showView('loginStep')" style="margin-top:0.5rem;">&#8592; Change Number</button>
                 </form>
             </div>
         </div>
     </div>
+
 
     <!-- GSAP Animations & Modal Logic -->
     <script>
@@ -248,207 +207,225 @@
         });
     </script>
 
-    <!-- FIREBASE AUTH LOGIC -->
+    <!-- OTP box styles -->
+    <style>
+        .otp-box {
+            width: 44px; height: 52px;
+            border: 2px solid #e2e8f0; border-radius: 12px;
+            text-align: center; font-size: 1.5rem; font-weight: 800;
+            color: #0f172a; outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .otp-box:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+    </style>
+
+    <!-- FIREBASE AUTH LOGIC (Unified) -->
     <script>
-        // Initialize Firebase
         const firebaseConfig = <?= getFirebaseConfigJs() ?>;
         let auth = null;
+        let recaptchaVerifier = null;
+        let confirmationResult = null;
+        let resendInterval = null;
+        let cfTurnstileToken = '';
+
+        // ── Turnstile callbacks ──────────────────────────────────────────
+        function onTurnstileSuccess(token) {
+            cfTurnstileToken = token;
+            const btn = document.getElementById('loginBtn');
+            if (btn) btn.disabled = false;
+        }
+        function onTurnstileError() {
+            cfTurnstileToken = '';
+            const btn = document.getElementById('loginBtn');
+            if (btn) btn.disabled = true;
+            showError('Security check failed. Please refresh and try again.');
+        }
+        function onTurnstileExpired() {
+            cfTurnstileToken = '';
+            const btn = document.getElementById('loginBtn');
+            if (btn) btn.disabled = true;
+            showError('Security check expired. Please complete it again.');
+            if (typeof turnstile !== 'undefined') turnstile.reset();
+        }
+
+        // ── Firebase init ────────────────────────────────────────────────
         try {
             if (firebaseConfig && firebaseConfig.apiKey) {
                 firebase.initializeApp(firebaseConfig);
                 auth = firebase.auth();
-                window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', { 'size': 'invisible' });
-            } else {
-                console.error("Firebase config is missing API Key. Check your .env file.");
+                recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', { 'size': 'invisible' });
             }
-        } catch(e) {
-            console.error("Firebase Init Error:", e);
-        }
-        
+        } catch(e) { console.error('Firebase Init Error:', e); }
+
         const errorMsg = document.getElementById('errorMsg');
-        function showError(text) { if(errorMsg) { errorMsg.innerText = text; errorMsg.style.display = 'block'; } else alert(text); }
+        function showError(text) { if(errorMsg) { errorMsg.innerText = text; errorMsg.style.display = 'block'; } }
         let confirmationResult = null;
 
-        // Customer Phone Login
-        const phoneLoginForm = document.getElementById('phoneLoginForm');
-        if (phoneLoginForm) {
-            phoneLoginForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                if (!auth) {
-                    showError("System configuration error (Firebase missing). Contact Admin.");
-                    return;
-                }
-                const rawPhone = document.getElementById('phone').value.replace(/\D/g, '');
-                if (rawPhone.length !== 10 || !/^[6-9]/.test(rawPhone)) {
-                    showError('Please enter a valid 10-digit mobile number starting with 6-9.');
-                    return;
-                }
-                const phone = '+91' + rawPhone;
-                const btnElement = document.getElementById('loginBtn');
-                const originalText = btnElement.innerHTML;
-                btnElement.innerHTML = 'Sending...'; btnElement.disabled = true;
-                if(errorMsg) errorMsg.style.display = 'none';
-
-                auth.signInWithPhoneNumber(phone, window.recaptchaVerifier)
-                    .then((result) => {
-                        confirmationResult = result;
-                        showView('otpStep');
-                    }).catch((error) => {
-                        console.error("SMS Error", error);
-                        showError(error.message || "Failed to send SMS. Refresh and try again.");
-                        window.recaptchaVerifier.render().then(w => grecaptcha.reset(w));
-                        btnElement.innerHTML = originalText; btnElement.disabled = false;
-                    });
-            });
-        }
-
-        // OTP Verify
-        const otpForm = document.getElementById('otpForm');
-        if (otpForm) {
-            otpForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                const otpCode = document.getElementById('otpInput').value;
-                const btnElement = document.getElementById('verifyOtpBtn');
-                btnElement.innerHTML = 'Verifying...'; btnElement.disabled = true;
-
-                confirmationResult.confirm(otpCode).then((result) => {
-                    result.user.getIdToken().then(idToken => sendTokenToBackend(idToken, result.user.phoneNumber, null, null, btnElement));
-                }).catch((error) => {
-                    showError("Invalid OTP code.");
-                    btnElement.innerHTML = 'Secure Login'; btnElement.disabled = false;
-                });
-            });
-        }
-
-        // Google SignIn
-        function startGoogleLogin() {
-            if (!auth) {
-                showError("System configuration error (Firebase missing). Contact Admin.");
+        // ── Phone Submit ─────────────────────────────────────────────────────────
+        document.getElementById('phoneLoginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!auth) { showError('Firebase not configured. Contact admin.'); return; }
+            const rawPhone = document.getElementById('phone').value.replace(/\D/g, '');
+            if (rawPhone.length !== 10 || !/^[6-9]/.test(rawPhone)) {
+                showError('Please enter a valid 10-digit mobile number starting with 6-9.');
                 return;
             }
+            if (!cfTurnstileToken) {
+                showError('Please complete the security check.');
+                return;
+            }
+            const btn = document.getElementById('loginBtn');
+            const orig = btn.innerHTML;
+            btn.innerHTML = 'Verifying security…'; btn.disabled = true;
+            if (errorMsg) errorMsg.style.display = 'none';
+
+            // ── Pre-verify Turnstile on backend (includes rate limiting) ──
+            try {
+                const tsRes = await fetch('api/verify_turnstile.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cf_token: cfTurnstileToken, phone: rawPhone })
+                });
+                const tsData = await tsRes.json();
+                if (!tsData.success) {
+                    showError(tsData.message || 'Security check failed. Try again.');
+                    btn.innerHTML = orig; btn.disabled = false;
+                    if (typeof turnstile !== 'undefined') { turnstile.reset(); cfTurnstileToken = ''; }
+                    return;
+                }
+            } catch(err) {
+                showError('Network error. Please try again.');
+                btn.innerHTML = orig; btn.disabled = false;
+                return;
+            }
+
+            // ── Send OTP via Firebase ──────────────────────────────────
+            btn.innerHTML = 'Sending OTP…';
+            const phone = '+91' + rawPhone;
+            auth.signInWithPhoneNumber(phone, recaptchaVerifier)
+                .then((result) => {
+                    confirmationResult = result;
+                    document.getElementById('otpSubtext').textContent =
+                        'Code sent to +91 ' + rawPhone + '. Enter it below.';
+                    showView('otpStep');
+                    document.querySelectorAll('.otp-box')[0].focus();
+                    startResendTimer(60);
+                }).catch((err) => {
+                    showError(err.message || 'Failed to send OTP. Try again.');
+                    // Reset Firebase reCAPTCHA and Turnstile for retry
+                    if (recaptchaVerifier) { recaptchaVerifier.clear(); recaptchaVerifier = null; }
+                    try { recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', { 'size': 'invisible' }); } catch(e2) {}
+                    if (typeof turnstile !== 'undefined') { turnstile.reset(); cfTurnstileToken = ''; }
+                    btn.innerHTML = orig; btn.disabled = true; // wait for Turnstile
+                });
+        });
+
+        function startResendTimer(secs) {
+            clearInterval(resendInterval);
+            const resendBtn = document.getElementById('resendOtpBtn');
+            const timerTxt = document.getElementById('resendTimerTxt');
+            if (resendBtn) resendBtn.disabled = true;
+            let t = secs;
+            if (timerTxt) timerTxt.textContent = `(${t}s)`;
+            resendInterval = setInterval(() => {
+                t--;
+                if (timerTxt) timerTxt.textContent = t > 0 ? `(${t}s)` : '';
+                if (t <= 0) {
+                    clearInterval(resendInterval);
+                    if (resendBtn) resendBtn.disabled = false;
+                }
+            }, 1000);
+        }
+
+        async function resendOtpModal() {
+            const resendBtn = document.getElementById('resendOtpBtn');
+            if (resendBtn) resendBtn.disabled = true;
+            try {
+                const phone = '+91' + document.getElementById('phone').value.replace(/\D/g,'');
+                confirmationResult = await auth.signInWithPhoneNumber(phone, recaptchaVerifier);
+                startResendTimer(60);
+                const errEl = document.getElementById('otpError');
+                if (errEl) { errEl.textContent = 'New OTP sent!'; errEl.style.display = 'block'; errEl.style.color='#16a34a'; errEl.style.background='#f0fdf4'; }
+            } catch(err) {
+                const errEl = document.getElementById('otpError');
+                if (errEl) { errEl.textContent = err.message || 'Failed to resend.'; errEl.style.display = 'block'; errEl.style.color='#ef4444'; errEl.style.background='#fee2e2'; }
+                if (resendBtn) resendBtn.disabled = false;
+            }
+        }
+
+        // ── 6-box OTP logic ──────────────────────────────────────────────────────
+        document.querySelectorAll('.otp-box').forEach((box, i, boxes) => {
+            box.addEventListener('input', () => {
+                box.value = box.value.replace(/[^0-9]/g, '').slice(-1);
+                if (box.value && i < boxes.length - 1) boxes[i + 1].focus();
+            });
+            box.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && !box.value && i > 0) boxes[i - 1].focus();
+            });
+            box.addEventListener('paste', (e) => {
+                e.preventDefault();
+                const digits = (e.clipboardData.getData('text') || '').replace(/\D/g,'').slice(0,6);
+                [...digits].forEach((d, j) => { if (boxes[i + j]) boxes[i + j].value = d; });
+                if (boxes[Math.min(i + digits.length, boxes.length - 1)]) 
+                    boxes[Math.min(i + digits.length, boxes.length - 1)].focus();
+            });
+        });
+
+        // ── OTP Form Submit ──────────────────────────────────────────────────────
+        document.getElementById('otpForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const otpCode = [...document.querySelectorAll('.otp-box')].map(b => b.value).join('');
+            const errEl = document.getElementById('otpError');
+            if (otpCode.length < 6) { errEl.textContent = 'Please enter all 6 digits.'; errEl.style.display = 'block'; return; }
+            errEl.style.display = 'none';
+            const btn = document.getElementById('verifyOtpBtn');
+            btn.innerHTML = 'Verifying...'; btn.disabled = true;
+            confirmationResult.confirm(otpCode)
+                .then((result) => {
+                    result.user.getIdToken().then(idToken =>
+                        sendTokenToBackend(idToken, result.user.phoneNumber, null, null, btn)
+                    );
+                }).catch(() => {
+                    errEl.textContent = 'Invalid OTP code. Please try again.';
+                    errEl.style.display = 'block';
+                    btn.innerHTML = 'Secure Login'; btn.disabled = false;
+                });
+        });
+
+        // ── Google SignIn ────────────────────────────────────────────────────────
+        function startGoogleLogin() {
+            if (!auth) { showError('Firebase not configured. Contact admin.'); return; }
             const provider = new firebase.auth.GoogleAuthProvider();
             auth.signInWithPopup(provider).then((result) => {
                 const user = result.user;
-                user.getIdToken().then(idToken => sendTokenToBackend(idToken, user.phoneNumber, user.email, user.displayName, document.querySelector('.google-btn')));
-            }).catch((error) => showError(error.message));
+                user.getIdToken().then(idToken =>
+                    sendTokenToBackend(idToken, user.phoneNumber, user.email, user.displayName, document.querySelector('.google-btn'))
+                );
+            }).catch((err) => showError(err.message));
         }
 
-        // Backend Sync
-        async function sendTokenToBackend(idToken, phone, email, name, btnElement) {
-            if(btnElement) btnElement.innerHTML = 'Authorizing...';
+        // ── Backend Sync (role-based redirect) ──────────────────────────────────
+        async function sendTokenToBackend(idToken, phone, email, name, btnEl) {
+            if (btnEl) btnEl.innerHTML = 'Authorizing...';
             try {
-                const response = await fetch('api/auth.php', {
+                const res = await fetch('api/auth.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'firebase_login', idToken, phone, email, name })
                 });
-                const result = await response.json();
+                const result = await res.json();
                 if (result.success) window.location.href = result.redirect;
                 else {
-                    showError(result.message || 'An error occurred server-side');
-                    if(btnElement) { btnElement.innerHTML = 'Retry'; btnElement.disabled = false; }
+                    const errEl = document.getElementById('otpError');
+                    if (errEl) { errEl.textContent = result.message || 'Server error.'; errEl.style.display = 'block'; }
+                    else showError(result.message || 'Server error.');
+                    if (btnEl) { btnEl.innerHTML = 'Retry'; btnEl.disabled = false; }
                 }
-            } catch (error) {
-                showError('Server error. Please try again.');
-                if(btnElement) { btnElement.innerHTML = 'Retry'; btnElement.disabled = false; }
+            } catch (err) {
+                showError('Network error. Please try again.');
+                if (btnEl) { btnEl.innerHTML = 'Retry'; btnEl.disabled = false; }
             }
         }
-
-        // ── STAFF FIREBASE PHONE OTP LOGIN ──────────────────────────────────────
-        let staffConfirmationResult = null;
-        let staffRecaptchaVerifier  = null;
-
-        function initStaffRecaptcha() {
-            if (staffRecaptchaVerifier || !auth) return;
-            try {
-                staffRecaptchaVerifier = new firebase.auth.RecaptchaVerifier('staff-recaptcha-container', { 'size': 'invisible' });
-            } catch(e) { console.error('Staff reCAPTCHA init error:', e); }
-        }
-
-        // Init reCAPTCHA when staff panel opens
-        const _origToggleStaff = toggleStaffLogin;
-        toggleStaffLogin = function() {
-            _origToggleStaff();
-            if (document.getElementById('staffStep').classList.contains('active')) {
-                initStaffRecaptcha();
-            }
-        };
-
-        // Step 1: Send real OTP to staff phone
-        const staffLoginForm = document.getElementById('staffLoginForm');
-        if (staffLoginForm) {
-            staffLoginForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                const err = document.getElementById('staffError');
-                err.style.display = 'none';
-                if (!auth) {
-                    err.innerText = 'System error: Firebase not configured. Contact admin.';
-                    err.style.display = 'block'; return;
-                }
-                const rawPhone = document.getElementById('staffPhone').value.replace(/\D/g, '');
-                if (rawPhone.length !== 10 || !/^[6-9]/.test(rawPhone)) {
-                    err.innerText = 'Please enter a valid 10-digit number starting with 6-9.';
-                    err.style.display = 'block'; return;
-                }
-                const phone = '+91' + rawPhone;
-                const btn   = document.getElementById('staffSendOtpBtn');
-                const orig  = btn.innerHTML;
-                btn.innerHTML = 'Sending OTP...'; btn.disabled = true;
-                initStaffRecaptcha();
-
-                auth.signInWithPhoneNumber(phone, staffRecaptchaVerifier)
-                    .then((result) => {
-                        staffConfirmationResult = result;
-                        document.getElementById('staffOtpSubtext').innerText =
-                            'Code sent to +91 ' + rawPhone + '. Enter it below.';
-                        showView('staffOtpStep');
-                        btn.innerHTML = orig; btn.disabled = false;
-                    })
-                    .catch((error) => {
-                        console.error('Staff SMS Error:', error);
-                        let msg = error.message || 'Failed to send SMS. Try again.';
-                        if (error.code === 'auth/too-many-requests')    msg = 'Too many attempts. Wait a few minutes.';
-                        if (error.code === 'auth/invalid-phone-number') msg = 'This number is not registered as staff.';
-                        err.innerText = msg; err.style.display = 'block';
-                        if (staffRecaptchaVerifier) {
-                            staffRecaptchaVerifier.render().then(w => grecaptcha.reset(w)).catch(() => {});
-                        }
-                        btn.innerHTML = orig; btn.disabled = false;
-                    });
-            });
-        }
-
-        // Step 2: Verify OTP → firebase_login → role-based redirect (admin / delivery)
-        const staffOtpForm = document.getElementById('staffOtpForm');
-        if (staffOtpForm) {
-            staffOtpForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                const otpCode = document.getElementById('staffOtpInput').value.trim();
-                const btn = document.getElementById('staffVerifyOtpBtn');
-                const err = document.getElementById('staffOtpError');
-                err.style.display = 'none';
-                if (!staffConfirmationResult) {
-                    err.innerText = 'Session expired. Go back and resend the OTP.';
-                    err.style.display = 'block'; return;
-                }
-                btn.innerHTML = 'Verifying...'; btn.disabled = true;
-                staffConfirmationResult.confirm(otpCode)
-                    .then((result) => {
-                        btn.innerHTML = 'Authorizing...';
-                        return result.user.getIdToken().then(idToken =>
-                            sendTokenToBackend(idToken, result.user.phoneNumber, null, null, btn)
-                        );
-                    })
-                    .catch((error) => {
-                        console.error('Staff OTP verify error:', error);
-                        let msg = 'Invalid OTP code. Please try again.';
-                        if (error.code === 'auth/code-expired') msg = 'OTP expired. Go back and request a new one.';
-                        err.innerText = msg; err.style.display = 'block';
-                        btn.innerHTML = 'Verify &amp; Enter Portal'; btn.disabled = false;
-                    });
-            });
-        }
-        // ─────────────────────────────────────────────────────────────────────────
     </script>
 
     <!-- Contact Modal -->

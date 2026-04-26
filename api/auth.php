@@ -20,7 +20,7 @@ $data = json_decode(file_get_contents('php://input'), true);
 $action = $data['action'] ?? '';
 
 // CSRF Protection Check for authenticated actions (like logout)
-if ($action !== 'firebase_login' && $action !== 'login' && $action !== 'dummy_login') {
+if ($action !== 'firebase_login' && $action !== 'login' && $action !== 'dummy_login' && $action !== 'save_verified_phone') {
     // getallheaders() can fail on some Apache/Hostinger setups — fall back to $_SERVER
     $headers = function_exists('getallheaders') ? getallheaders() : [];
     $csrfToken = $headers['X-CSRF-Token']
@@ -138,12 +138,20 @@ if ($action === 'firebase_login') {
     $redirect = '';
     if ($role === 'admin') {
         $redirect = 'admin/dashboard.php';
-    }
-    elseif ($role === 'delivery') {
+    } elseif ($role === 'delivery') {
         $redirect = 'delivery/dashboard.php';
-    }
-    else {
-        $redirect = 'user/dashboard.php';
+    } else {
+        // Check if phone needs verification (new Google users or unverified)
+        $phoneCheck = $pdo->prepare("SELECT phone, phone_verified FROM users WHERE id = ?");
+        $phoneCheck->execute([$userId]);
+        $phoneData = $phoneCheck->fetch();
+        $pendingPhone = strpos($phoneData['phone'] ?? '', 'GOOGLE_PENDING_') === 0;
+        $needsVerify  = $pendingPhone || empty($phoneData['phone_verified']);
+        if ($needsVerify) {
+            $redirect = 'user/verify_phone.php';
+        } else {
+            $redirect = 'user/dashboard.php';
+        }
     }
 
     respond(true, 'Login successful!', ['redirect' => $redirect, 'is_new' => $isNewUser]);
@@ -207,6 +215,35 @@ if ($action === 'dummy_login') {
         $redirect = 'user/dashboard.php';
 
     respond(true, 'Login successful!', ['redirect' => $redirect]);
+}
+
+// ── Save verified phone (after Firebase OTP success on verify_phone.php) ──
+if ($action === 'save_verified_phone') {
+    if (!isset($_SESSION['user_id'])) respond(false, 'Not authenticated.');
+
+    $phone = preg_replace('/[^0-9]/', '', $data['phone'] ?? '');
+    if (strlen($phone) !== 10) respond(false, 'Invalid phone number.');
+
+    $userId = (int)$_SESSION['user_id'];
+
+    // Ensure uniqueness — no other user can have this phone
+    $dup = $pdo->prepare("SELECT id FROM users WHERE phone = ? AND id != ? LIMIT 1");
+    $dup->execute([$phone, $userId]);
+    if ($dup->fetch()) respond(false, 'This phone number is already registered with another account.');
+
+    // Save phone and mark as verified (phone is LOCKED — cannot be changed later)
+    $update = $pdo->prepare("UPDATE users SET phone = ?, phone_verified = 1 WHERE id = ? AND (phone LIKE 'GOOGLE_PENDING_%' OR phone_verified = 0)");
+    $update->execute([$phone, $userId]);
+
+    if ($update->rowCount() === 0) {
+        // Already has verified phone — just redirect
+        respond(true, 'Phone already verified.', ['redirect' => 'user/dashboard.php']);
+    }
+
+    // Update session
+    $_SESSION['phone'] = $phone;
+
+    respond(true, 'Phone verified successfully!', ['redirect' => 'user/dashboard.php']);
 }
 
 if ($action === 'logout') {

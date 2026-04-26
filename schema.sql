@@ -374,4 +374,32 @@ CREATE TABLE IF NOT EXISTS `refund_audit_log` (
   KEY `idx_action` (`action_taken`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- ── market_requests ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `market_requests` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `user_id` INT(11) NOT NULL,
+  `market_name` VARCHAR(255) NOT NULL,
+  `city` VARCHAR(100) NOT NULL,
+  `pincode` VARCHAR(10) NOT NULL,
+  `landmark` VARCHAR(255) DEFAULT NULL,
+  `status` ENUM('pending','approved','rejected') DEFAULT 'pending',
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  CONSTRAINT `market_requests_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ── otp_requests ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `otp_requests` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `phone` VARCHAR(15) NOT NULL,
+  `otp_hash` VARCHAR(255) NOT NULL,
+  `expires_at` DATETIME NOT NULL,
+  `attempts` INT(11) DEFAULT 0,
+  `ip_address` VARCHAR(45) DEFAULT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_phone` (`phone`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

@@ -183,6 +183,16 @@ if ($action === 'create_order') {
             $baseAmount = $weight * 50;
         }
 
+        // --- Compute Add-ons ---
+        $detailsData = $data['details'] ?? null;
+        $addonCost = 0;
+        if (is_array($detailsData) && isset($detailsData['addons']) && is_array($detailsData['addons'])) {
+            foreach ($detailsData['addons'] as $addon) {
+                $addonCost += (float)($addon['price'] ?? 0);
+            }
+        }
+        $baseAmount += $addonCost;
+
         // --- Coupon ---
         $discount       = 0;
         $appliedCouponId = null;
@@ -268,8 +278,9 @@ if ($action === 'create_order') {
         }
 
         // --- Insert order ---
-        $stmt = $pdo->prepare("INSERT INTO orders (user_id, market_id, delivery_id, status, total_amount, payment_status, instructions, lat, lng, pickup_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$userId, $user['market_id'], $deliveryId, $orderStatus, $totalAmount, $paymentState, $instructions, $user['lat'], $user['lng'], $user['shop_address']]);
+        $detailsJson = $detailsData ? json_encode($detailsData) : null;
+        $stmt = $pdo->prepare("INSERT INTO orders (user_id, market_id, delivery_id, status, total_amount, payment_status, instructions, lat, lng, pickup_address, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$userId, $user['market_id'], $deliveryId, $orderStatus, $totalAmount, $paymentState, $instructions, $user['lat'], $user['lng'], $user['shop_address'], $detailsJson]);
         $orderId = $pdo->lastInsertId();
 
         // --- Insert order items (if product-based) ---
@@ -692,10 +703,16 @@ if ($action === 'get_razorpay_refund_status') {
 
     if ($httpCode === 200) {
         $r = json_decode($response, true);
+        $arn = $r['acquirer_data']['arn'] ?? null;
+        // Persist ARN to DB when received (async update, no user wait)
+        if ($arn) {
+            $pdo->prepare("UPDATE refunds SET arn = ? WHERE rzp_refund_id = ? AND user_id = ? AND (arn IS NULL OR arn = '')")
+                ->execute([$arn, $rzpRefundId, $userId]);
+        }
         respond(true, 'Razorpay details fetched.', [
             'status' => $r['status'] ?? 'unknown',
             'speed'  => $r['speed_processed'] ?? 'N/A',
-            'arn'    => $r['acquirer_data']['arn'] ?? 'Pending (Check bank in 3-7 days)',
+            'arn'    => $arn ?? 'Pending (Check bank in 3-7 days)',
             'created_at' => isset($r['created_at']) ? date('d M Y, h:i a', $r['created_at']) : 'N/A'
         ]);
     } else {

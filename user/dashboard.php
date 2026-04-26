@@ -6,6 +6,13 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'customer') {
 $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
 $stmt->execute([$_SESSION['user_id']]);
 $user = $stmt->fetch();
+
+// Phone verification gate — Google users must verify before accessing dashboard
+$_isPendingPhone = strpos($user['phone'] ?? '', 'GOOGLE_PENDING_') === 0;
+if ($_isPendingPhone || empty($user['phone_verified'])) {
+    header('Location: verify_phone.php'); exit;
+}
+
 $needsProfileSetup = empty($user['name']) || empty($user['shop_address']) || empty($user['market_id']);
 $qrCodeHash = $user['qr_code_hash'] ?? '';
 $csrfToken  = $_SESSION['csrf_token'] ?? '';
@@ -15,6 +22,12 @@ $payLaterPlan = $user['pay_later_plan'] ?? 'NONE';
 $payLaterStatus = $user['pay_later_status'] ?? 'locked';
 
 $markets = $pdo->query("SELECT id, name FROM markets ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+
+// Fetch active "out_for_delivery" order ID to generate dynamic encrypted QR token
+$stmtActive = $pdo->prepare("SELECT id FROM orders WHERE user_id = ? AND status = 'out_for_delivery' ORDER BY updated_at DESC LIMIT 1");
+$stmtActive->execute([$_SESSION['user_id']]);
+$activeOrderId = $stmtActive->fetchColumn();
+$qrToken = $activeOrderId ? encrypt_order_token($activeOrderId) : '';
 
 // Delivery OTP Generator (30 Min Rolling Window)
 $otpSalt = "digiwash_delivery_otp_sec";
@@ -201,7 +214,7 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
             </div>
         </section>
 
-        <!-- ════ NEW ORDER ════ -->
+        <!-- ════ NEW ORDER WIZARD ════ -->
         <section id="order" class="section">
             <div class="page-header">
                 <div class="page-title">New <span>Order</span></div>
@@ -215,48 +228,125 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
             </div>
             <?php else: ?>
 
-
-
-            <!-- Product grid -->
-            <div class="card" style="margin-bottom:1.25rem;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-                    <div style="font-weight:800;font-size:1rem;">🧺 Select Services</div>
-                    <span id="catalogStatus" style="font-size:.82rem;color:var(--muted);">Loading…</span>
-                </div>
-                <div class="products-grid" id="productGrid"></div>
+            <!-- Wizard Progress -->
+            <div class="wizard-steps" style="display:flex; justify-content:space-between; margin-bottom:1.5rem; position:relative;">
+                <div class="w-step active" id="wStep1">1. Service</div>
+                <div class="w-step" id="wStep2">2. Products</div>
+                <div class="w-step" id="wStep3">3. Add-ons & Checkout</div>
             </div>
 
-            <!-- Cart + Form -->
-            <div class="card">
-                <div id="cartWrap" style="display:none;margin-bottom:1.25rem;">
-                    <div style="font-weight:800;font-size:1rem;margin-bottom:.75rem;">🛒 Your Cart</div>
-                    <div class="cart-box">
-                        <div id="cartLines"></div>
-                        <div class="cart-total"><span>Total</span><span id="cartGrand">₹0</span></div>
+            <!-- STEP 1: SERVICE TYPE -->
+            <div id="step1Container" class="wizard-container active">
+                <div class="card">
+                    <div style="font-weight:800;font-size:1.1rem;margin-bottom:1rem;">🧺 Select Service Type</div>
+                    <div class="services-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+                        <div class="service-card" onclick="selectServiceType('Wash & Iron', this)">
+                            <i class="material-icons-outlined">local_laundry_service</i>
+                            <div>Wash & Iron</div>
+                        </div>
+                        <div class="service-card" onclick="selectServiceType('Iron & Fold', this)">
+                            <i class="material-icons-outlined">dry_cleaning</i>
+                            <div>Iron & Fold</div>
+                        </div>
+                        <div class="service-card" onclick="selectServiceType('Premium Wash', this)">
+                            <i class="material-icons-outlined">diamond</i>
+                            <div>Premium Wash</div>
+                        </div>
+                        <div class="service-card" onclick="selectServiceType('Dry Clean', this)">
+                            <i class="material-icons-outlined">checkroom</i>
+                            <div>Dry Clean</div>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" style="width:100%;margin-top:1.5rem;" onclick="nextStep(2)" id="btnNext1" disabled>Continue to Products →</button>
+                </div>
+            </div>
+
+            <!-- STEP 2: PRODUCTS -->
+            <div id="step2Container" class="wizard-container" style="display:none;">
+                <div class="card" style="margin-bottom:1.25rem;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                        <div style="font-weight:800;font-size:1.1rem;">👕 Add Products</div>
+                        <span id="catalogStatus" style="font-size:.82rem;color:var(--muted);">Loading…</span>
+                    </div>
+                    <div class="products-grid" id="productGrid"></div>
+                    <div style="display:flex;gap:10px;margin-top:1.5rem;">
+                        <button class="btn btn-outline" style="flex:1;" onclick="nextStep(1)">← Back</button>
+                        <button class="btn btn-primary" style="flex:2;" onclick="nextStep(3)">Continue to Add-ons →</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 3: ADD-ONS & CHECKOUT -->
+            <div id="step3Container" class="wizard-container" style="display:none;">
+                <!-- Addons -->
+                <div class="card" style="margin-bottom:1.25rem;">
+                    <div style="font-weight:800;font-size:1.1rem;margin-bottom:1rem;">✨ Extra Add-ons</div>
+                    <div class="addons-grid" style="display:grid;grid-template-columns:1fr;gap:10px;">
+                        <label class="addon-card" style="display:flex;align-items:center;justify-content:space-between;padding:1rem;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <input type="checkbox" class="addon-chk" value="Stitching" data-price="50" onchange="updateCart()">
+                                <div>
+                                    <div style="font-weight:700;">Stitching / Minor Repair</div>
+                                    <div style="font-size:0.8rem;color:var(--muted);">Fix loose buttons or minor tears</div>
+                                </div>
+                            </div>
+                            <div style="font-weight:700;color:var(--primary);">+₹50</div>
+                        </label>
+                        <label class="addon-card" style="display:flex;align-items:center;justify-content:space-between;padding:1rem;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <input type="checkbox" class="addon-chk" value="Chemical Bleach" data-price="80" onchange="updateCart()">
+                                <div>
+                                    <div style="font-weight:700;">Chemical Bleach</div>
+                                    <div style="font-size:0.8rem;color:var(--muted);">Tough stain removal</div>
+                                </div>
+                            </div>
+                            <div style="font-weight:700;color:var(--primary);">+₹80</div>
+                        </label>
+                        <label class="addon-card" style="display:flex;align-items:center;justify-content:space-between;padding:1rem;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <input type="checkbox" class="addon-chk" value="Express Delivery" data-price="100" onchange="updateCart()">
+                                <div>
+                                    <div style="font-weight:700;">Express Delivery</div>
+                                    <div style="font-size:0.8rem;color:var(--muted);">Delivery within 24 hours</div>
+                                </div>
+                            </div>
+                            <div style="font-weight:700;color:var(--primary);">+₹100</div>
+                        </label>
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label>Special Instructions <span style="color:var(--muted);font-weight:500;">(Optional)</span></label>
-                    <textarea id="orderInstr" class="form-control" rows="2" placeholder="e.g. Use fabric softener, handle silk gently…"></textarea>
-                </div>
-
-                <div class="form-group">
-                    <label>Coupon Code <span style="color:var(--muted);font-weight:500;">(Optional)</span></label>
-                    <div style="display:flex;gap:8px;">
-                        <input type="text" id="couponCode" class="form-control" placeholder="e.g. SAVE10" style="text-transform:uppercase;">
-                        <button class="btn btn-outline" id="applyCouponBtn">Apply</button>
+                <!-- Cart + Form -->
+                <div class="card">
+                    <div id="cartWrap" style="display:none;margin-bottom:1.25rem;">
+                        <div style="font-weight:800;font-size:1rem;margin-bottom:.75rem;">🛒 Order Summary</div>
+                        <div style="font-size:0.85rem;color:var(--primary);font-weight:700;margin-bottom:0.5rem;" id="selectedServiceLabel"></div>
+                        <div class="cart-box">
+                            <div id="cartLines"></div>
+                            <div class="cart-total"><span>Total</span><span id="cartGrand">₹0</span></div>
+                        </div>
                     </div>
-                    <div id="couponFeedback" style="font-size:.82rem;font-weight:600;margin-top:5px;"></div>
-                </div>
 
-                <div class="form-group">
-                    <label>Payment Mode</label>
-                    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                        <select id="paymentMode" class="form-control" style="flex:1;">
-                            <option value="ONLINE">Pay Now (Online)</option>
-                            <option value="COD">Cash on Delivery</option>
-                            <?php if($payLaterStatus === 'approved' && $payLaterPlan !== 'NONE'): ?>
+                    <div class="form-group">
+                        <label>Special Instructions <span style="color:var(--muted);font-weight:500;">(Optional)</span></label>
+                        <textarea id="orderInstr" class="form-control" rows="2" placeholder="e.g. Use fabric softener, handle silk gently…"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Coupon Code <span style="color:var(--muted);font-weight:500;">(Optional)</span></label>
+                        <div style="display:flex;gap:8px;">
+                            <input type="text" id="couponCode" class="form-control" placeholder="e.g. SAVE10" style="text-transform:uppercase;">
+                            <button class="btn btn-outline" id="applyCouponBtn">Apply</button>
+                        </div>
+                        <div id="couponFeedback" style="font-size:.82rem;font-weight:600;margin-top:5px;"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Payment Mode</label>
+                        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                            <select id="paymentMode" class="form-control" style="flex:1;">
+                                <option value="ONLINE">Pay Now (Online)</option>
+                                <option value="COD">Cash on Delivery</option>
+                                <?php if($payLaterStatus === 'approved' && $payLaterPlan !== 'NONE'): ?>
                                 <option value="<?= $payLaterPlan ?>">Pay Later (<?= str_replace('PAY_LATER_','', $payLaterPlan) ?> Orders)</option>
                             <?php endif; ?>
                         </select>
@@ -412,16 +502,23 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
                             <input type="text" id="p_instructions" class="form-control" placeholder="e.g. Call when near gate" value="<?= htmlspecialchars($parts['instructions']) ?>">
                         </div>
                         <div class="form-group">
-                            <label>Service Market Zone *</label>
-                            <div style="display:flex;gap:10px;">
+                             <label>Service Market Zone *</label>
+                             <div style="display:flex;gap:10px;">
                                 <select id="p_market" class="form-control" style="flex:1;" required>
                                     <option value="">Select your area...</option>
                                     <?php foreach($markets as $m): ?>
                                         <option value="<?= $m['id'] ?>" <?= ($user['market_id']==$m['id'])?'selected':'' ?>><?= htmlspecialchars($m['name']) ?></option>
                                     <?php endforeach; ?>
                                 </select>
-                            </div>
-                            <div id="locStatus" style="font-size:0.75rem;color:var(--muted);margin-top:5px;display:none;"></div>
+                             </div>
+                             <div id="locStatus" style="font-size:0.75rem;color:var(--muted);margin-top:5px;display:none;"></div>
+                             <!-- Market Request Link -->
+                             <div style="margin-top:8px;">
+                                 <a href="javascript:void(0)" onclick="openModal('marketRequestModal')" style="font-size:.8rem;font-weight:700;color:var(--primary);text-decoration:none;display:inline-flex;align-items:center;gap:5px;">
+                                     <i class="material-icons-outlined" style="font-size:1rem;">add_location_alt</i>
+                                     Can't find your area? Request to add
+                                 </a>
+                             </div>
                         </div>
                         <div class="form-group">
                             <label>Alternate Contact <span style="color:var(--muted);font-weight:500;">(Optional, 10 digits)</span></label>
@@ -438,8 +535,16 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
                 <div>
                     <div class="qr-card">
                         <h4>🔲 Delivery QR Code</h4>
-                        <canvas id="userQrCode" style="border-radius:8px;"></canvas>
-                        <p>Show this to the delivery partner to securely complete your delivery.</p>
+                        <?php if ($qrToken): ?>
+                            <canvas id="userQrCode" style="border-radius:8px;"></canvas>
+                            <p style="margin-top:0.5rem;font-weight:600;color:var(--success);">Active order out for delivery.</p>
+                            <p>Show this to the delivery partner to securely complete your delivery.</p>
+                        <?php else: ?>
+                            <div style="background:rgba(255,255,255,0.05);padding:2rem;border-radius:12px;color:var(--muted);text-align:center;">
+                                <i class="material-icons-outlined" style="font-size:2rem;opacity:0.5;">qr_code_scanner</i>
+                                <p style="margin-top:0.5rem;">QR Code will appear here when your order is out for delivery.</p>
+                            </div>
+                        <?php endif; ?>
                     </div>
                     <div class="card-sm" style="margin-top:1rem;text-align:center;">
                         <div style="font-size:.82rem;font-weight:600;color:var(--muted);"><i class="material-icons-outlined" style="vertical-align:middle; font-size:1.1rem; color:var(--primary);">verified_user</i> DigiWash Standard Security</div>
@@ -450,6 +555,40 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
         </section>
 
     </main>
+</div>
+
+<!-- ── Market Request Modal ── -->
+<div class="modal-overlay" id="marketRequestModal">
+    <div class="modal-box" style="max-width:480px;">
+        <button class="modal-close" onclick="closeModal('marketRequestModal')">✕</button>
+        <div class="modal-title">📍 Request New Service Area</div>
+        <div class="modal-sub" style="font-size:.85rem;color:var(--muted);margin-bottom:1.25rem;line-height:1.5;">Can't find your area? Fill in the details below and we'll review it within 2-3 business days.</div>
+        <div id="mreqMsg" style="font-size:.84rem;font-weight:600;padding:.6rem .9rem;border-radius:8px;margin-bottom:.75rem;display:none;"></div>
+        <div class="form-group">
+            <label>Market / Area Name <span style="color:#ef4444;">*</span></label>
+            <input type="text" id="mreq_name" class="form-control" placeholder="e.g. Andheri East, Koramangala" maxlength="150">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:1rem;">
+            <div>
+                <label style="display:block;margin-bottom:.4rem;font-size:.82rem;font-weight:700;color:var(--text);">City <span style="color:#ef4444;">*</span></label>
+                <input type="text" id="mreq_city" class="form-control no-prefix" placeholder="e.g. Mumbai" maxlength="80" style="padding:.7rem .9rem;">
+            </div>
+            <div>
+                <label style="display:block;margin-bottom:.4rem;font-size:.82rem;font-weight:700;color:var(--text);">Pincode <span style="color:#ef4444;">*</span></label>
+                <input type="tel" id="mreq_pincode" class="form-control no-prefix" placeholder="6 digits" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').substring(0,6)" style="padding:.7rem .9rem;">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Landmark <span style="color:var(--muted);font-weight:500;">(Optional)</span></label>
+            <input type="text" id="mreq_landmark" class="form-control" placeholder="e.g. Near City Mall, Metro Station" maxlength="200">
+        </div>
+        <div style="display:flex;gap:.75rem;margin-top:1.25rem;">
+            <button class="btn btn-primary" style="flex:1;justify-content:center;" onclick="submitMarketRequest()" id="btnSubmitMreq">
+                <i class="material-icons-outlined" style="font-size:1rem;">send</i> Submit Request
+            </button>
+            <button class="btn btn-ghost" onclick="closeModal('marketRequestModal')">Cancel</button>
+        </div>
+    </div>
 </div>
 
 <!-- ── Return Modal ── -->
@@ -670,9 +809,10 @@ document.querySelectorAll('.modal-overlay').forEach(m =>
 
 // ── Render QR ──────────────────────────────────────────────────
 function renderQR() {
-    const hash = "<?= htmlspecialchars($qrCodeHash) ?>";
-    if (!hash) return;
-    new QRious({ element: document.getElementById('userQrCode'), value: hash, size: 180, level:'M', foreground:'#e2e8f0', background:'#0f172a' });
+    const token = "<?= htmlspecialchars($qrToken) ?>";
+    const canvas = document.getElementById('userQrCode');
+    if (!token || !canvas) return;
+    new QRious({ element: canvas, value: token, size: 180, level:'M', foreground:'#e2e8f0', background:'#0f172a' });
 }
 
 // ── Stats ──────────────────────────────────────────────────────
@@ -713,6 +853,10 @@ async function loadActivity() {
             <div style="flex:1">
                 <div class="act-text">Order #${o.id} — ${statusIcon[o.status]||''} ${o.status.replace(/_/g,' ').toUpperCase()}</div>
                 <div class="act-sub">₹${o.total_amount} · ${fmtDate(o.created_at,{day:'2-digit',month:'short'})}</div>
+                ${o.status === 'out_for_delivery' && o.delivery_guy_phone ? `
+                <a href="tel:+91${o.delivery_guy_phone}" class="badge b-green" style="margin-top:6px;display:inline-flex;align-items:center;gap:4px;text-decoration:none;padding:4px 10px;border-radius:999px;">
+                    <i class="material-icons-outlined" style="font-size:0.9rem;">call</i> Call Delivery Boy
+                </a>` : ''}
             </div>
             ${statusBadge(o.status)}
         </div>
@@ -802,19 +946,57 @@ function removeFromCart(productId) {
     updateCart();
 }
 
+let selectedServiceType = '';
+let selectedAddons = [];
+
+function selectServiceType(type, el) {
+    document.querySelectorAll('.service-card').forEach(c => c.style.borderColor = 'var(--border)');
+    el.style.borderColor = 'var(--primary)';
+    selectedServiceType = type;
+    document.getElementById('btnNext1').disabled = false;
+    document.getElementById('selectedServiceLabel').textContent = `Service: ${type}`;
+    updateCart();
+}
+
+function nextStep(step) {
+    document.querySelectorAll('.wizard-container').forEach(c => c.style.display = 'none');
+    document.getElementById('step' + step + 'Container').style.display = 'block';
+    
+    document.querySelectorAll('.w-step').forEach(c => c.classList.remove('active'));
+    for (let i = 1; i <= step; i++) {
+        document.getElementById('wStep' + i).classList.add('active');
+    }
+}
+
 function updateCart() {
     const items = Object.values(cart);
     const wrap = document.getElementById('cartWrap');
     const btn = document.getElementById('submitOrderBtn');
-    if (!items.length) { wrap.style.display='none'; btn.disabled=true; return; }
+    
+    // Gather Add-ons
+    selectedAddons = [];
+    document.querySelectorAll('.addon-chk:checked').forEach(chk => {
+        selectedAddons.push({ name: chk.value, price: parseFloat(chk.dataset.price) });
+    });
+
+    if (!items.length && !selectedAddons.length) { wrap.style.display='none'; if(btn) btn.disabled=true; return; }
     wrap.style.display = 'block';
-    btn.disabled = false;
+    if(btn) btn.disabled = false;
+    
     let sub = 0;
-    let html = items.map(it => {
+    let html = '';
+    
+    items.forEach(it => {
         const line = it.price * it.quantity;
         sub += line;
-        return `<div class="cart-row"><span>${it.product_name} (${it.size_label}) × ${it.quantity}</span><span style="font-weight:700;">₹${line.toFixed(2)}</span></div>`;
-    }).join('');
+        html += `<div class="cart-row"><span>${it.product_name} (${it.size_label}) × ${it.quantity}</span><span style="font-weight:700;">₹${line.toFixed(2)}</span></div>`;
+    });
+    
+    selectedAddons.forEach(a => {
+        sub += a.price;
+        html += `<div class="cart-row" style="color:var(--primary);"><span>+ ${a.name} (Add-on)</span><span style="font-weight:700;">₹${a.price.toFixed(2)}</span></div>`;
+    });
+
     const total = Math.max(0, sub - appliedDiscount);
     if (appliedDiscount > 0) html += `<div class="cart-row" style="color:var(--success)"><span>Coupon Discount</span><span>−₹${appliedDiscount.toFixed(2)}</span></div>`;
     document.getElementById('cartLines').innerHTML = html;
@@ -864,12 +1046,16 @@ document.getElementById('submitOrderBtn')?.addEventListener('click', async () =>
     }
 
     const items = Object.values(cart);
-    if (!items.length) { toast('error','Empty Cart','Select at least one service.'); return; }
+    if (!items.length && !selectedAddons.length) { toast('error','Empty Cart','Select at least one product or add-on.'); return; }
     const btn = document.getElementById('submitOrderBtn');
     btn.innerHTML = 'Placing…'; btn.disabled = true;
 
     const payload = {
         items: items.map(it => ({ product_price_id: it.product_price_id, quantity: it.quantity })),
+        details: {
+            service_type: selectedServiceType,
+            addons: selectedAddons
+        },
         instructions: document.getElementById('orderInstr').value,
         coupon_code: document.getElementById('couponCode').value,
         payment_mode: document.getElementById('paymentMode').value
@@ -878,6 +1064,12 @@ document.getElementById('submitOrderBtn')?.addEventListener('click', async () =>
     const processOrderSuccess = (d) => {
         toast('success','Order Placed! 🎉', d.message);
         cart = {}; appliedDiscount = 0;
+        selectedServiceType = '';
+        selectedAddons = [];
+        document.querySelectorAll('.addon-chk').forEach(c => c.checked = false);
+        document.querySelectorAll('.service-card').forEach(c => c.style.borderColor = 'var(--border)');
+        document.getElementById('btnNext1').disabled = true;
+        
         document.querySelectorAll('.pc').forEach(c => c.classList.remove('sel'));
         document.querySelectorAll('.product-card').forEach(c => c.classList.remove('has-item'));
         document.querySelectorAll('[id^="qty-"]').forEach(c => c.style.display='none');
@@ -889,6 +1081,10 @@ document.getElementById('submitOrderBtn')?.addEventListener('click', async () =>
         btn.innerHTML='<i class="material-icons-outlined" style="font-size:1rem;">local_shipping</i> Request Pickup';
         btn.disabled = false;
         fetchStats();
+        
+        // Reset wizard to Step 1
+        nextStep(1);
+        
         switchTab('history', document.getElementById('nav-history'));
     };
 
@@ -1612,6 +1808,69 @@ function escHtml(str) {
     div.textContent = str;
     return div.innerHTML;
 }
+
+// ── Market Request ────────────────────────────────────────────
+async function submitMarketRequest() {
+    const name     = document.getElementById('mreq_name').value.trim();
+    const city     = document.getElementById('mreq_city').value.trim();
+    const pincode  = document.getElementById('mreq_pincode').value.trim();
+    const landmark = document.getElementById('mreq_landmark').value.trim();
+    const msgEl    = document.getElementById('mreqMsg');
+    const btn      = document.getElementById('btnSubmitMreq');
+
+    msgEl.style.display = 'none';
+    if (!name || !city || !pincode) {
+        msgEl.style.cssText = 'display:block;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;padding:.6rem .9rem;border-radius:8px;font-size:.84rem;font-weight:600;margin-bottom:.75rem;';
+        msgEl.textContent = 'Please fill in Market Name, City and Pincode.';
+        return;
+    }
+    if (pincode.length !== 6) {
+        msgEl.style.cssText = 'display:block;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;padding:.6rem .9rem;border-radius:8px;font-size:.84rem;font-weight:600;margin-bottom:.75rem;';
+        msgEl.textContent = 'Pincode must be exactly 6 digits.';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:white;border-radius:50%;animation:spin .7s linear infinite;"></span> Submitting…';
+
+    try {
+        const res = await fetch('../api/market_requests.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+            body: JSON.stringify({ action: 'submit_market_request', market_name: name, city, pincode, landmark, csrf_token: csrfToken })
+        });
+        const d = await res.json();
+        if (d.success) {
+            msgEl.style.cssText = 'display:block;background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;padding:.6rem .9rem;border-radius:8px;font-size:.84rem;font-weight:600;margin-bottom:.75rem;';
+            msgEl.textContent = '✅ ' + d.message;
+            // Clear form
+            ['mreq_name','mreq_city','mreq_pincode','mreq_landmark'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            setTimeout(() => closeModal('marketRequestModal'), 3000);
+            toast('success', 'Request Submitted!', 'We\'ll notify you when your area is added.');
+        } else {
+            msgEl.style.cssText = 'display:block;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;padding:.6rem .9rem;border-radius:8px;font-size:.84rem;font-weight:600;margin-bottom:.75rem;';
+            msgEl.textContent = d.message || 'Failed to submit request.';
+        }
+    } catch {
+        msgEl.style.cssText = 'display:block;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;padding:.6rem .9rem;border-radius:8px;font-size:.84rem;font-weight:600;margin-bottom:.75rem;';
+        msgEl.textContent = 'Network error. Please try again.';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="material-icons-outlined" style="font-size:1rem;">send</i> Submit Request';
+    }
+}
+
+// Auto-fill city in market request modal from profile city field
+document.addEventListener('click', (e) => {
+    if (e.target.closest('[onclick*="marketRequestModal"]')) {
+        const cityField = document.getElementById('p_city');
+        const mreqCity  = document.getElementById('mreq_city');
+        if (cityField && mreqCity && !mreqCity.value) mreqCity.value = cityField.value;
+    }
+});
 
 // ── Init ─────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {

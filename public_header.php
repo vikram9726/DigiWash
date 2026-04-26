@@ -20,6 +20,10 @@ $isIndex = ($currentPage === 'index.php' || $currentPage === '');
     <!-- Firebase SDK (Compat version for simplicity) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+
+    <!-- Cloudflare Turnstile (replaces Google reCAPTCHA for bot protection) -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
     
     <!-- GSAP for animations -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>

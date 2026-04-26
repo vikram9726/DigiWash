@@ -73,7 +73,9 @@ if (php_sapi_name() !== 'cli' && !headers_sent()) {
     header('X-Content-Type-Options: nosniff');
     header('X-XSS-Protection: 1; mode=block');
     header('Referrer-Policy: strict-origin-when-cross-origin');
-    header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://checkout.razorpay.com https://www.gstatic.com https://www.google.com/recaptcha/ https://cdnjs.cloudflare.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://api.razorpay.com https://fcm.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.google.com https://www.gstatic.com; frame-src 'self' https://www.google.com https://recaptcha.net https://*.firebaseapp.com https://api.razorpay.com https://checkout.razorpay.com;");
+    // CSP: Cloudflare Turnstile replaces Google reCAPTCHA.
+    // challenges.cloudflare.com is allowed for the Turnstile script + API.
+    header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://checkout.razorpay.com https://www.gstatic.com https://cdnjs.cloudflare.com https://apis.google.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://api.razorpay.com https://fcm.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.google.com https://www.gstatic.com https://challenges.cloudflare.com; frame-src 'self' https://challenges.cloudflare.com https://*.firebaseapp.com https://api.razorpay.com https://checkout.razorpay.com;");
 }
 
 // Generate a CSRF token if one doesn't exist
@@ -91,6 +93,11 @@ function getFirebaseConfigJs() {
         'messagingSenderId' => getenv('FIREBASE_MESSAGING_SENDER_ID') ?: '',
         'appId' => getenv('FIREBASE_APP_ID') ?: ''
     ]);
+}
+
+// Helper: expose Turnstile site key to frontend safely
+function getTurnstileSiteKey() {
+    return htmlspecialchars(getenv('CF_TURNSTILE_SITE_KEY') ?: '', ENT_QUOTES, 'UTF-8');
 }
 
 // ── Google OAuth2 Access Token (for FCM v1 API) ──
@@ -257,5 +264,25 @@ function sendPushNotification($pdo, $userId, $title, $body) {
 
     error_log("FCM: Push failed for user $userId (HTTP $httpCode): $response");
     return false;
+}
+// ── AES-256-CBC Order Token (for QR codes) ───────────────────────────────────
+// Encrypts an order ID so QR codes don't expose raw IDs.
+// Key is derived from RAZORPAY_KEY_SECRET (32 bytes, zero extra config needed).
+function encrypt_order_token(int $orderId): string {
+    $key    = hash('sha256', getenv('RAZORPAY_KEY_SECRET') ?: 'digiwash_fallback_key', true);
+    $iv     = random_bytes(16);
+    $cipher = openssl_encrypt((string)$orderId, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+    return rtrim(strtr(base64_encode($iv . $cipher), '+/', '-_'), '=');
+}
+
+function decrypt_order_token(string $token): ?int {
+    $key  = hash('sha256', getenv('RAZORPAY_KEY_SECRET') ?: 'digiwash_fallback_key', true);
+    $raw  = base64_decode(strtr($token, '-_', '+/') . str_repeat('=', (4 - strlen($token) % 4) % 4));
+    if (!$raw || strlen($raw) < 17) return null;
+    $iv        = substr($raw, 0, 16);
+    $cipher    = substr($raw, 16);
+    $plaintext = openssl_decrypt($cipher, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+    if ($plaintext === false || !ctype_digit($plaintext)) return null;
+    return (int)$plaintext;
 }
 ?>

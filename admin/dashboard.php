@@ -146,6 +146,10 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
         <div class="menu-item" id="nav-markets" onclick="switchTab('markets',this)">
             <i class="material-icons-outlined">map</i> Markets & Zones
         </div>
+        <div class="menu-item" id="nav-market-requests" onclick="switchTab('market-requests',this)">
+            <i class="material-icons-outlined">add_location_alt</i> Market Requests
+            <span class="badge-count" id="mreqBadge" style="display:none">0</span>
+        </div>
         <div class="menu-item" id="nav-partners" onclick="switchTab('partners',this)">
             <i class="material-icons-outlined">local_shipping</i> Delivery Partners
         </div>
@@ -307,8 +311,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             <div class="panel">
                 <div class="tbl-wrap">
                     <table>
-                        <thead><tr><th>#</th><th>Customer</th><th>Order</th><th>Amount</th><th>Razorpay Pay ID</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
-                        <tbody id="refundsBody"><tr><td colspan="8"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
+                        <thead><tr><th>#</th><th>Customer</th><th>Order</th><th>Amount</th><th>Razorpay Pay ID</th><th>ARN (Bank Ref)</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+                        <tbody id="refundsBody"><tr><td colspan="9"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -407,6 +411,28 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             </div>
         </section>
 
+        <!-- ══ MARKET REQUESTS ══ -->
+        <section id="market-requests" class="section-content">
+            <div class="top-bar">
+                <div class="page-title">Market <span>Requests</span></div>
+                <button class="btn-sm btn-outline btn-lg" onclick="loadMarketRequests('pending', null)">↻ Refresh</button>
+            </div>
+            <div class="filter-chips">
+                <div class="chip active" id="mrChip-pending" onclick="loadMarketRequests('pending',this)">⏳ Pending</div>
+                <div class="chip" id="mrChip-approved" onclick="loadMarketRequests('approved',this)">✅ Approved</div>
+                <div class="chip" id="mrChip-rejected" onclick="loadMarketRequests('rejected',this)">❌ Rejected</div>
+                <div class="chip" id="mrChip-all" onclick="loadMarketRequests('all',this)">All</div>
+            </div>
+            <div class="panel">
+                <div class="tbl-wrap">
+                    <table>
+                        <thead><tr><th>#</th><th>Customer</th><th>Area Name</th><th>City</th><th>Pincode</th><th>Landmark</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+                        <tbody id="marketReqBody"><tr><td colspan="9"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
         <!-- ══ PRODUCTS ══ -->
         <section id="products" class="section-content">
             <div class="top-bar">
@@ -466,7 +492,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
         <form id="addPartnerForm">
             <div class="form-group"><label>Full Name *</label><input type="text" id="pName" required placeholder="e.g. Rahul Kumar"></div>
             <div class="form-group"><label>Phone (10 digits) *</label><input type="tel" id="pPhone" required maxlength="10" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'').substring(0,10)" placeholder="e.g. 9876543210"></div>
-            <div class="form-group"><label>Login OTP (min 4 digits) *</label><input type="text" id="pOtp" required maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'')" placeholder="e.g. 123456"></div>
+            <p style="font-size:0.8rem;color:#64748b;margin-bottom:0.75rem;">Partner will log in using Firebase Phone OTP on their own device — no PIN needed.</p>
             <div class="form-group"><label>Assign Market Zone</label><select id="pMarket"><option value="">No specific market</option></select></div>
             <div style="display:flex;gap:0.75rem;margin-top:1rem;">
                 <button type="submit" class="btn-sm btn-success btn-lg" id="btnAddPartner">Save Partner</button>
@@ -485,7 +511,6 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
         <form id="editPartnerForm">
             <input type="hidden" id="editPartnerId">
             <div class="form-group"><label>Full Name *</label><input type="text" id="editPName" required></div>
-            <div class="form-group"><label>New OTP (leave blank to keep)</label><input type="text" id="editPOtp" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/\D/g,'')" placeholder="Leave blank = unchanged"></div>
             <div class="form-group"><label>Assign Market Zone</label><select id="editPMarket"><option value="">No specific market</option></select></div>
             <div style="display:flex;gap:0.75rem;margin-top:1rem;">
                 <button type="submit" class="btn-sm btn-primary btn-lg">Save Changes</button>
@@ -738,9 +763,9 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 const csrf = "<?= $_SESSION['csrf_token'] ?? '' ?>";
 
 // ── API helper ──
-async function api(action, payload = {}) {
+async function api(action, payload = {}, endpoint = '../api/admin.php') {
     try {
-        const r = await fetch('../api/admin.php', {
+        const r = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
             body: JSON.stringify({ action, csrf_token: csrf, ...payload })
@@ -762,6 +787,7 @@ async function switchTab(id, el) {
     if (id === 'marketing') loadCoupons();
     if (id === 'orders') loadOrders();
     if (id === 'markets') loadMarkets();
+    if (id === 'market-requests') loadMarketRequests('pending', document.getElementById('mrChip-pending'));
     if (id === 'users') loadUsers();
     if (id === 'partners') loadPartners();
     if (id === 'returns') loadReturns('all');
@@ -831,6 +857,18 @@ async function loadStats() {
     } else {
         rfb.style.display = 'none';
     }
+
+    loadMReqBadge();
+}
+
+async function loadMReqBadge() {
+    const d = await api('get_market_requests_count', {}, '../api/market_requests.php');
+    if (d.success && d.count > 0) {
+        document.getElementById('mreqBadge').textContent = d.count;
+        document.getElementById('mreqBadge').style.display = 'inline-block';
+    } else {
+        document.getElementById('mreqBadge').style.display = 'none';
+    }
 }
 
 let revChart, distChart, ordChart;
@@ -894,11 +932,11 @@ async function loadRefunds(status, chipEl) {
     else { const c = document.getElementById('rfChip-' + status); if (c) c.classList.add('active'); }
 
     const tbody = document.getElementById('refundsBody');
-    tbody.innerHTML = '<tr><td colspan="8"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9"><div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading…</div></td></tr>';
 
     const d = await api('get_refunds', { status });
     if (!d.success || !d.refunds || !d.refunds.length) {
-        tbody.innerHTML = '<tr><td colspan="8"><div class="no-data"><i class="material-icons-outlined">currency_rupee</i>No refund requests found.</div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9"><div class="no-data"><i class="material-icons-outlined">currency_rupee</i>No refund requests found.</div></td></tr>';
         return;
     }
 
@@ -919,6 +957,13 @@ async function loadRefunds(status, chipEl) {
             <td><strong>Order #${r.order_id}</strong></td>
             <td><strong style="color:#6366f1">₹${parseFloat(r.refund_amount).toFixed(2)}</strong></td>
             <td><span style="font-size:0.78rem;color:#64748b;font-family:monospace">${r.rzp_payment_id || '<em>N/A</em>'}</span></td>
+            <td>
+                ${r.arn
+                    ? `<span style="font-family:monospace;font-size:0.75rem;color:#0d9488;font-weight:700" title="Acquirer Reference Number">${r.arn}</span>`
+                    : r.status === 'processed'
+                        ? '<span style="font-size:0.75rem;color:#94a3b8;font-style:italic">Pending (3-7 days)</span>'
+                        : '—'}
+            </td>
             <td>${statusTag(r.status)}</td>
             <td style="font-size:0.8rem">${fmtDate(r.created_at,{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
             <td>
@@ -934,7 +979,7 @@ async function loadRefunds(status, chipEl) {
                 <div style="display:flex;flex-direction:column;gap:4px;">
                     <span style="font-family:monospace;font-size:0.75rem;color:#10b981">${r.rzp_refund_id}</span>
                     <button class="btn-sm btn-outline" onclick="openRefundTrackModal('${r.rzp_refund_id}', ${r.order_id}, ${r.refund_amount}, '${r.created_at}', '${r.approved_at}')" style="font-size:0.7rem;padding:2px 6px;">
-                        <i class="material-icons-outlined" style="font-size:0.8rem">info</i> Track Info
+                        <i class="material-icons-outlined" style="font-size:0.8rem">info</i> Live Track
                     </button>
                 </div>` : '—'}
             </td>
@@ -1685,6 +1730,73 @@ async function confirmDeleteProduct() {
     } else {
         toast('error', 'Error', d.message);
     }
+}
+
+// ─────────────────────────────
+// MARKET REQUESTS
+// ─────────────────────────────
+let currentMreqFilter = 'pending';
+async function loadMarketRequests(status = currentMreqFilter, chipEl = null) {
+    currentMreqFilter = status;
+    if (chipEl) {
+        document.querySelectorAll('[id^="mrChip-"]').forEach(c => c.classList.remove('active'));
+        chipEl.classList.add('active');
+    }
+    const tbody = document.getElementById('marketReqBody');
+    tbody.innerHTML = '<tr><td colspan="9"><div class="no-data"><i class="material-icons-outlined">autorenew</i> Loading...</div></td></tr>';
+
+    const d = await api('get_market_requests', { status }, '../api/market_requests.php');
+    if (!d.success || !d.requests?.length) {
+        tbody.innerHTML = '<tr><td colspan="9"><div class="no-data"><i class="material-icons-outlined">inbox</i> No requests found.</div></td></tr>';
+        return;
+    }
+
+    let html = '';
+    d.requests.forEach(r => {
+        let acts = '';
+        if (r.status === 'pending') {
+            acts = `<div class="action-btns">
+                <button class="btn-sm btn-success" onclick="approveMReq(${r.id})">Approve</button>
+                <button class="btn-sm btn-danger" onclick="rejectMReq(${r.id})">Reject</button>
+            </div>`;
+        }
+        
+        const statusTag = (s) => {
+            if (s === 'pending') return '<span class="badge b-amber">⏳ PENDING</span>';
+            if (s === 'approved') return '<span class="badge b-green">✅ APPROVED</span>';
+            if (s === 'rejected') return '<span class="badge b-red">❌ REJECTED</span>';
+            return '<span class="badge b-gray">' + s.toUpperCase() + '</span>';
+        };
+
+        const dateStr = fmtDate(r.created_at, {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+
+        html += `<tr>
+            <td>${r.id}</td>
+            <td><b>${r.user_name}</b><br><small>${r.user_phone}</small></td>
+            <td><b>${r.market_name}</b></td>
+            <td>${r.city}</td>
+            <td>${r.pincode}</td>
+            <td>${r.landmark || '-'}</td>
+            <td>${statusTag(r.status)}</td>
+            <td style="font-size:0.8rem">${dateStr}</td>
+            <td>${acts}</td>
+        </tr>`;
+    });
+    tbody.innerHTML = html;
+}
+
+async function approveMReq(id) {
+    if(!confirm('Approve this area and add it to live markets?')) return;
+    const d = await api('approve_market_request', { request_id: id }, '../api/market_requests.php');
+    toast(d.success?'success':'error', 'Market Area', d.message);
+    if(d.success) { loadMarketRequests(); loadMarkets(); loadMReqBadge(); }
+}
+
+async function rejectMReq(id) {
+    if(!confirm('Reject this market request?')) return;
+    const d = await api('reject_market_request', { request_id: id }, '../api/market_requests.php');
+    toast(d.success?'success':'error', 'Market Area', d.message);
+    if(d.success) { loadMarketRequests(); loadMReqBadge(); }
 }
 
 // ── INVOICES & CONFIGS ────────────────

@@ -27,3 +27,16 @@ uploads/
 
 # Composer lock — managed by Hostinger on deploy
 composer.lock
+
+# Debug & temp files — NEVER commit to production
+temp_debug.php
+temp_*.php
+debug_*.php
+*_test.php
+
+# Repomix output (auto-generated, large, do not commit)
+repomix-output.xml
+repomix-output.json
+
+# Firebase Admin SDK private key (should live OUTSIDE public_html on Hostinger)
+*firebase-adminsdk*.json

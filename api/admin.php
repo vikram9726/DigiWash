@@ -481,19 +481,17 @@ if ($action === 'get_partners') {
 }
 
 if ($action === 'create_delivery_partner') {
-    $name  = htmlspecialchars(strip_tags($data['name'] ?? ''), ENT_QUOTES, 'UTF-8');
-    $phone = preg_replace('/[^0-9]/', '', $data['phone'] ?? '');
-    $otp   = preg_replace('/[^0-9]/', '', $data['otp'] ?? '');
+    $name     = htmlspecialchars(strip_tags($data['name'] ?? ''), ENT_QUOTES, 'UTF-8');
+    $phone    = preg_replace('/[^0-9]/', '', $data['phone'] ?? '');
     $marketId = (int)($data['market_id'] ?? 0) ?: null;
 
     if (empty($name))             respond(false, 'Name is required.');
     if (strlen($phone) !== 10)    respond(false, 'Phone must be exactly 10 digits.');
     if (!preg_match('/^[6-9]/', $phone)) respond(false, 'Phone must start with 6–9.');
-    if (empty($otp) || strlen($otp) < 4) respond(false, 'OTP must be at least 4 digits.');
 
     try {
-        $pdo->prepare("INSERT INTO users (name, phone, dummy_otp, role, market_id) VALUES (?, ?, ?, 'delivery', ?)")->execute([$name, $phone, $otp, $marketId]);
-        respond(true, 'Delivery partner created successfully.');
+        $pdo->prepare("INSERT INTO users (name, phone, role, market_id) VALUES (?, ?, 'delivery', ?)")->execute([$name, $phone, $marketId]);
+        respond(true, 'Delivery partner created. They can now log in via Phone OTP.');
     } catch (\Exception $e) {
         if (str_contains($e->getMessage(), 'Duplicate'))
             respond(false, 'A user with this phone already exists.');
@@ -504,18 +502,12 @@ if ($action === 'create_delivery_partner') {
 if ($action === 'update_delivery_partner') {
     $partnerId = (int)($data['partner_id'] ?? 0);
     $name      = htmlspecialchars(strip_tags($data['name'] ?? ''), ENT_QUOTES, 'UTF-8');
-    $otp       = preg_replace('/[^0-9]/', '', $data['otp'] ?? '');
     $marketId  = (int)($data['market_id'] ?? 0) ?: null;
 
     if (!$partnerId || empty($name)) respond(false, 'Partner ID and name are required.');
-    if (!empty($otp) && strlen($otp) < 4) respond(false, 'OTP must be at least 4 digits.');
 
     try {
-        if (!empty($otp)) {
-            $pdo->prepare("UPDATE users SET name = ?, dummy_otp = ?, market_id = ? WHERE id = ? AND role = 'delivery'")->execute([$name, $otp, $marketId, $partnerId]);
-        } else {
-            $pdo->prepare("UPDATE users SET name = ?, market_id = ? WHERE id = ? AND role = 'delivery'")->execute([$name, $marketId, $partnerId]);
-        }
+        $pdo->prepare("UPDATE users SET name = ?, market_id = ? WHERE id = ? AND role = 'delivery'")->execute([$name, $marketId, $partnerId]);
         respond(true, 'Partner updated successfully.');
     } catch (\Exception $e) {
         respond(false, 'DB Error: ' . $e->getMessage());
@@ -706,15 +698,21 @@ if ($action === 'approve_refund') {
 
     if ($httpCode === 200) {
         $rzpRefund = json_decode($response, true);
+        // Extract ARN immediately if Razorpay returns it (may be null for instant refunds)
+        $arnValue = $rzpRefund['acquirer_data']['arn'] ?? null;
         try {
             $pdo->beginTransaction();
-            $pdo->prepare("UPDATE refunds SET status = 'processed', rzp_refund_id = ? WHERE id = ?")->execute([$rzpRefund['id'], $refundId]);
+            $pdo->prepare("UPDATE refunds SET status = 'processed', rzp_refund_id = ?, arn = ? WHERE id = ?")
+                ->execute([$rzpRefund['id'], $arnValue, $refundId]);
             $pdo->prepare("UPDATE payments SET status = 'refunded' WHERE id = ?")->execute([$refund['payment_id']]);
             // Notify user
             $pdo->prepare("INSERT INTO notifications (user_id, title, message) VALUES (?, 'Refund Processed ✅', ?)")
                 ->execute([$refund['user_id'], "Your refund of ₹{$refund['refund_amount']} for Order #{$refund['order_id']} has been processed and will reflect in 3–7 working days."]);
             $pdo->commit();
-            respond(true, "Refund of ₹{$refund['refund_amount']} processed successfully.", ['rzp_refund_id' => $rzpRefund['id']]);
+            respond(true, "Refund of ₹{$refund['refund_amount']} processed successfully.", [
+                'rzp_refund_id' => $rzpRefund['id'],
+                'arn' => $arnValue
+            ]);
         } catch (\Exception $e) {
             $pdo->rollBack();
             respond(false, 'DB update failed after Razorpay success: ' . $e->getMessage());
@@ -767,10 +765,16 @@ if ($action === 'get_razorpay_refund_status') {
 
     if ($httpCode === 200) {
         $r = json_decode($response, true);
+        $arn = $r['acquirer_data']['arn'] ?? null;
+        // Persist ARN to DB if available and not yet stored
+        if ($arn) {
+            $pdo->prepare("UPDATE refunds SET arn = ? WHERE rzp_refund_id = ? AND (arn IS NULL OR arn = '')")
+                ->execute([$arn, $rzpRefundId]);
+        }
         respond(true, 'Razorpay details fetched.', [
             'status' => $r['status'] ?? 'unknown',
             'speed'  => $r['speed_processed'] ?? 'N/A',
-            'arn'    => $r['acquirer_data']['arn'] ?? 'Pending (Check bank in 3-7 days)',
+            'arn'    => $arn ?? 'Pending (Check bank in 3-7 days)',
             'created_at' => isset($r['created_at']) ? date('d M Y, h:i a', $r['created_at']) : 'N/A'
         ]);
     } else {
