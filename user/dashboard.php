@@ -95,7 +95,9 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
             <i class="material-icons-outlined" style="font-size:1.4rem;">notifications</i>
             <span class="notif-dot" id="mobileNotifDot" style="display:none;"></span>
         </div>
-        <div class="tb-avatar" title="<?= $userName ?>"><?= strtoupper(substr($userName,0,1)) ?></div>
+        <div class="tb-notif" onclick="switchTab('marketplace', document.getElementById('nav-marketplace'))" title="Marketplace">
+            <i class="material-icons-outlined" style="font-size:1.4rem;">storefront</i>
+        </div>
     </div>
 </header>
 
