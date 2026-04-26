@@ -207,4 +207,31 @@ if ($action === 'delete_price') {
     respond(true, 'Price tier deleted.');
 }
 
+// ─── SERVICES & ADDONS ──────────────────────────────────────────────────────
+if ($action === 'get_services') {
+    $stmt = $pdo->query("SELECT * FROM services ORDER BY name ASC");
+    $services = $stmt->fetchAll();
+    respond(true, 'Services fetched.', ['services' => $services]);
+}
+if ($action === 'add_service') {
+    $name = trim(htmlspecialchars(strip_tags($data['name'] ?? ''), ENT_QUOTES, 'UTF-8'));
+    $icon = trim(htmlspecialchars(strip_tags($data['icon'] ?? 'local_laundry_service'), ENT_QUOTES, 'UTF-8'));
+    if (empty($name)) respond(false, 'Service name is required.');
+    $pdo->prepare("INSERT INTO services (name, icon) VALUES (?,?)")->execute([$name, $icon]);
+    respond(true, 'Service added successfully.');
+}
+if ($action === 'get_addons') {
+    $stmt = $pdo->query("SELECT * FROM addons ORDER BY name ASC");
+    $addons = $stmt->fetchAll();
+    respond(true, 'Add-ons fetched.', ['addons' => $addons]);
+}
+if ($action === 'add_addon') {
+    $name = trim(htmlspecialchars(strip_tags($data['name'] ?? ''), ENT_QUOTES, 'UTF-8'));
+    $description = trim(htmlspecialchars(strip_tags($data['description'] ?? ''), ENT_QUOTES, 'UTF-8'));
+    $price = (float)($data['price'] ?? 0);
+    if (empty($name)) respond(false, 'Add-on name is required.');
+    $pdo->prepare("INSERT INTO addons (name, description, price) VALUES (?,?,?)")->execute([$name, $description, $price]);
+    respond(true, 'Add-on added successfully.');
+}
+
 respond(false, 'Unknown action.');

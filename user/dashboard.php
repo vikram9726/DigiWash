@@ -91,7 +91,7 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
         <span>DigiWash</span>
     </div>
     <div class="tb-right">
-        <div class="tb-notif" id="mobileNotifBtn" onclick="switchTab('notifications', document.getElementById('nav-notifications'))" title="Notifications">
+        <div class="tb-notif" id="mobileNotifBtn" onclick="document.getElementById('notifDropdown').classList.toggle('open'); event.stopPropagation();" title="Notifications">
             <i class="material-icons-outlined" style="font-size:1.4rem;">notifications</i>
             <span class="notif-dot" id="mobileNotifDot" style="display:none;"></span>
         </div>
@@ -166,11 +166,6 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
 
         <!-- GLOBAL TOP NAV -->
         <div class="header-actions">
-            <!-- Marketplace Button -->
-            <a href="marketplace.php" class="btn-marketplace">
-                <i class="material-icons-outlined">storefront</i>
-                <span>Marketplace</span>
-            </a>
             
             <div class="nav-bell hover-lift" id="notifBellBtn">
                 <i class="material-icons-outlined">notifications</i>
@@ -258,23 +253,8 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
             <div id="step1Container" class="wizard-container active">
                 <div class="card">
                     <div style="font-weight:800;font-size:1.1rem;margin-bottom:1rem;">🧺 Select Service Type</div>
-                    <div class="services-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
-                        <div class="service-card" onclick="selectServiceType('Wash & Iron', this)">
-                            <i class="material-icons-outlined">local_laundry_service</i>
-                            <div>Wash & Iron</div>
-                        </div>
-                        <div class="service-card" onclick="selectServiceType('Iron & Fold', this)">
-                            <i class="material-icons-outlined">dry_cleaning</i>
-                            <div>Iron & Fold</div>
-                        </div>
-                        <div class="service-card" onclick="selectServiceType('Premium Wash', this)">
-                            <i class="material-icons-outlined">diamond</i>
-                            <div>Premium Wash</div>
-                        </div>
-                        <div class="service-card" onclick="selectServiceType('Dry Clean', this)">
-                            <i class="material-icons-outlined">checkroom</i>
-                            <div>Dry Clean</div>
-                        </div>
+                    <div class="services-grid" id="userServicesGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+                        <div style="grid-column:1/-1;text-align:center;padding:1rem;color:var(--muted);">Loading services...</div>
                     </div>
                     <button class="btn btn-primary" style="width:100%;margin-top:1.5rem;" onclick="nextStep(2)" id="btnNext1" disabled>Continue to Products →</button>
                 </div>
@@ -300,37 +280,8 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
                 <!-- Addons -->
                 <div class="card" style="margin-bottom:1.25rem;">
                     <div style="font-weight:800;font-size:1.1rem;margin-bottom:1rem;">✨ Extra Add-ons</div>
-                    <div class="addons-grid" style="display:grid;grid-template-columns:1fr;gap:10px;">
-                        <label class="addon-card" style="display:flex;align-items:center;justify-content:space-between;padding:1rem;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
-                            <div style="display:flex;align-items:center;gap:10px;">
-                                <input type="checkbox" class="addon-chk" value="Stitching" data-price="50" onchange="updateCart()">
-                                <div>
-                                    <div style="font-weight:700;">Stitching / Minor Repair</div>
-                                    <div style="font-size:0.8rem;color:var(--muted);">Fix loose buttons or minor tears</div>
-                                </div>
-                            </div>
-                            <div style="font-weight:700;color:var(--primary);">+₹50</div>
-                        </label>
-                        <label class="addon-card" style="display:flex;align-items:center;justify-content:space-between;padding:1rem;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
-                            <div style="display:flex;align-items:center;gap:10px;">
-                                <input type="checkbox" class="addon-chk" value="Chemical Bleach" data-price="80" onchange="updateCart()">
-                                <div>
-                                    <div style="font-weight:700;">Chemical Bleach</div>
-                                    <div style="font-size:0.8rem;color:var(--muted);">Tough stain removal</div>
-                                </div>
-                            </div>
-                            <div style="font-weight:700;color:var(--primary);">+₹80</div>
-                        </label>
-                        <label class="addon-card" style="display:flex;align-items:center;justify-content:space-between;padding:1rem;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
-                            <div style="display:flex;align-items:center;gap:10px;">
-                                <input type="checkbox" class="addon-chk" value="Express Delivery" data-price="100" onchange="updateCart()">
-                                <div>
-                                    <div style="font-weight:700;">Express Delivery</div>
-                                    <div style="font-size:0.8rem;color:var(--muted);">Delivery within 24 hours</div>
-                                </div>
-                            </div>
-                            <div style="font-weight:700;color:var(--primary);">+₹100</div>
-                        </label>
+                    <div class="addons-grid" id="userAddonsGrid" style="display:grid;grid-template-columns:1fr;gap:10px;">
+                        <div style="text-align:center;padding:1rem;color:var(--muted);">Loading add-ons...</div>
                     </div>
                 </div>
 
@@ -550,7 +501,7 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
                     </form>
                 </div>
 
-                <!-- QR Code -->
+                <!-- QR Code & Static ID -->
                 <div>
                     <div class="qr-card">
                         <h4>🔲 Delivery QR Code</h4>
@@ -569,6 +520,30 @@ $profilePct = round((count(array_filter($pfFields)) / count($pfFields)) * 100);
                         <div style="font-size:.82rem;font-weight:600;color:var(--muted);"><i class="material-icons-outlined" style="vertical-align:middle; font-size:1.1rem; color:var(--primary);">verified_user</i> DigiWash Standard Security</div>
                         <div style="font-size:.7rem;color:var(--muted);margin-top:6px; line-height:1.4;">Active Deliveries will prompt for verifying your session.</div>
                     </div>
+
+                    <!-- Static User QR -->
+                    <div class="card" style="margin-top:1.5rem;text-align:center;">
+                        <h4 style="margin-bottom:.5rem;">🪪 Member ID Card</h4>
+                        <div id="staticQrContainer" style="margin:1rem 0;display:flex;justify-content:center;">
+                            <canvas id="staticQrCode" style="border-radius:8px;"></canvas>
+                        </div>
+                        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1rem;">Your unique DigiWash ID. Show this at any hub.</p>
+                        <button class="btn btn-outline" style="width:100%;justify-content:center;" onclick="printStaticQR()">
+                            <i class="material-icons-outlined">print</i> Print ID Card
+                        </button>
+                    </div>
+
+                    <!-- Logout -->
+                    <div style="margin-top:1.5rem;">
+                        <form id="logoutFormProfile" action="../api/auth.php" method="POST">
+                            <input type="hidden" name="action" value="logout">
+                            <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                            <button type="submit" class="btn" style="width:100%;justify-content:center;color:#ef4444;border:2px solid #fecaca;background:white;font-weight:800;padding:.85rem;">
+                                <i class="material-icons-outlined" style="margin-right:6px;">logout</i> Sign Out
+                            </button>
+                        </form>
+                    </div>
+
                 </div>
             </div>
         </section>
@@ -830,8 +805,36 @@ document.querySelectorAll('.modal-overlay').forEach(m =>
 function renderQR() {
     const token = "<?= htmlspecialchars($qrToken) ?>";
     const canvas = document.getElementById('userQrCode');
-    if (!token || !canvas) return;
-    new QRious({ element: canvas, value: token, size: 180, level:'M', foreground:'#e2e8f0', background:'#0f172a' });
+    if (token && canvas) {
+        new QRious({ element: canvas, value: token, size: 180, level:'M', foreground:'#e2e8f0', background:'#0f172a' });
+    }
+
+    const staticCanvas = document.getElementById('staticQrCode');
+    const staticToken = "<?= htmlspecialchars($_SESSION['user_id'] . '-USER-' . substr($_SESSION['phone'], -4)) ?>";
+    if (staticCanvas && staticToken) {
+        new QRious({ element: staticCanvas, value: staticToken, size: 180, level:'M', foreground:'#0f172a', background:'#ffffff' });
+    }
+}
+
+function printStaticQR() {
+    const canvas = document.getElementById('staticQrCode');
+    if (!canvas) return;
+    const win = window.open();
+    win.document.write(`
+        <html>
+        <head><title>DigiWash Member ID</title></head>
+        <body style="text-align:center;font-family:sans-serif;padding:2rem;">
+            <h2>DigiWash Member ID</h2>
+            <img src="${canvas.toDataURL()}" style="margin:2rem 0; width:200px; height:200px;">
+            <p><strong><?= htmlspecialchars($userName) ?></strong></p>
+            <p><?= htmlspecialchars($userPhone) ?></p>
+            <p style="margin-top:2rem;font-size:0.8rem;color:#666;">Please show this QR code at any DigiWash Hub.</p>
+        </body>
+        </html>
+    `);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); win.close(); }, 250);
 }
 
 // ── Stats ──────────────────────────────────────────────────────
@@ -897,43 +900,83 @@ function fmtDate(ts, opts) {
 
 // ── Product Catalog ───────────────────────────────────────────
 async function loadProductCatalog() {
-    const grid = document.getElementById('productGrid');
+    const pGrid = document.getElementById('productGrid');
+    const sGrid = document.getElementById('userServicesGrid');
+    const aGrid = document.getElementById('userAddonsGrid');
     const status = document.getElementById('catalogStatus');
-    if (!grid) return;
-    if (grid.children.length > 0) { status.style.display='none'; return; } // cached
+    
+    if (!pGrid) return;
+    if (pGrid.children.length > 0) { status.style.display='none'; return; } // cached
     try {
-        const d = await apiCall('../api/products.php', 'get_products', { active_only: true });
+        const [pd, sd, ad] = await Promise.all([
+            apiCall('../api/products.php', 'get_products', { active_only: true }),
+            apiCall('../api/products.php', 'get_services', {}),
+            apiCall('../api/products.php', 'get_addons', {})
+        ]);
+        
         status.style.display = 'none';
-        if (!d.success || !d.products?.length) {
-            grid.innerHTML = '<p style="color:var(--muted);grid-column:1/-1;text-align:center;padding:2rem;">No services available yet. Check back soon!</p>';
-            return;
+        
+        // Products
+        if (!pd.success || !pd.products?.length) {
+            pGrid.innerHTML = '<p style="color:var(--muted);grid-column:1/-1;text-align:center;padding:2rem;">No products available yet. Check back soon!</p>';
+        } else {
+            pGrid.innerHTML = pd.products.map(p => {
+                const imgHtml = p.image_url
+                    ? `<img src="../${p.image_url}" alt="${p.name}">`
+                    : `<i class="material-icons-outlined">local_laundry_service</i>`;
+                const chips = p.prices.map(pp => `
+                    <div class="pc" data-ppid="${pp.id}" data-price="${pp.price}" data-prod="${p.id}" data-pname="${p.name.replace(/"/g,'&quot;')}" data-size="${pp.size_label}"
+                         onclick="selectPrice(this,${pp.id},'${p.name.replace(/'/g,'')}','${pp.size_label}',${pp.price},${p.id})">
+                        ${pp.size_label} — ₹${pp.price}
+                    </div>
+                `).join('');
+                return `
+                    <div class="product-card" id="pc-${p.id}">
+                        <div class="prod-img">${imgHtml}</div>
+                        <div class="prod-body">
+                            <div class="prod-name">${p.name}</div>
+                            ${p.description ? `<div class="prod-desc">${p.description}</div>` : ''}
+                            <div class="price-chips" id="chips-${p.id}">${chips}</div>
+                            <div class="qty-row" id="qty-${p.id}" style="display:none">
+                                <button type="button" class="qbtn" onclick="changeQty(${p.id},-1)">−</button>
+                                <span class="qval" id="qv-${p.id}">1</span>
+                                <button type="button" class="qbtn" onclick="changeQty(${p.id},1)">+</button>
+                                <button type="button" class="rm-btn" onclick="removeFromCart(${p.id})">Remove</button>
+                            </div>
+                        </div>
+                    </div>`;
+            }).join('');
         }
-        grid.innerHTML = d.products.map(p => {
-            const imgHtml = p.image_url
-                ? `<img src="../${p.image_url}" alt="${p.name}">`
-                : `<i class="material-icons-outlined">local_laundry_service</i>`;
-            const chips = p.prices.map(pp => `
-                <div class="pc" data-ppid="${pp.id}" data-price="${pp.price}" data-prod="${p.id}" data-pname="${p.name.replace(/"/g,'&quot;')}" data-size="${pp.size_label}"
-                     onclick="selectPrice(this,${pp.id},'${p.name.replace(/'/g,'')}','${pp.size_label}',${pp.price},${p.id})">
-                    ${pp.size_label} — ₹${pp.price}
+        
+        // Services
+        if (sd.success && sd.services?.length) {
+            sGrid.innerHTML = sd.services.map(s => `
+                <div class="service-card" onclick="selectServiceType('${s.name}', this)">
+                    <i class="material-icons-outlined">${s.icon}</i>
+                    <div>${s.name}</div>
                 </div>
             `).join('');
-            return `
-                <div class="product-card" id="pc-${p.id}">
-                    <div class="prod-img">${imgHtml}</div>
-                    <div class="prod-body">
-                        <div class="prod-name">${p.name}</div>
-                        ${p.description ? `<div class="prod-desc">${p.description}</div>` : ''}
-                        <div class="price-chips" id="chips-${p.id}">${chips}</div>
-                        <div class="qty-row" id="qty-${p.id}" style="display:none">
-                            <button type="button" class="qbtn" onclick="changeQty(${p.id},-1)">−</button>
-                            <span class="qval" id="qv-${p.id}">1</span>
-                            <button type="button" class="qbtn" onclick="changeQty(${p.id},1)">+</button>
-                            <button type="button" class="rm-btn" onclick="removeFromCart(${p.id})">Remove</button>
+        } else {
+            sGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--muted);">No services configured.</div>';
+        }
+        
+        // Addons
+        if (ad.success && ad.addons?.length) {
+            aGrid.innerHTML = ad.addons.map(a => `
+                <label class="addon-card" style="display:flex;align-items:center;justify-content:space-between;padding:1rem;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:white;margin-bottom:10px;">
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <input type="checkbox" class="addon-chk" value="${a.name}" data-price="${a.price}" onchange="updateCart()">
+                        <div>
+                            <div style="font-weight:700;">${a.name}</div>
+                            <div style="font-size:0.8rem;color:var(--muted);">${a.description || ''}</div>
                         </div>
                     </div>
-                </div>`;
-        }).join('');
+                    <div style="font-weight:700;color:var(--primary);">+₹${a.price}</div>
+                </label>
+            `).join('');
+        } else {
+            aGrid.innerHTML = '<div style="text-align:center;color:var(--muted);">No add-ons available.</div>';
+        }
     } catch(e) {
         status.textContent = 'Failed to load. Refresh page.';
     }

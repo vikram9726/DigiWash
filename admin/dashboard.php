@@ -132,18 +132,22 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 <!-- ── Mobile Top Bar (Admin) ── -->
 <header class="dw-top-bar" id="dwTopBar">
     <div class="tb-brand">
+        <i class="material-icons-outlined" onclick="document.querySelector('.sidebar').classList.toggle('mobile-open'); document.getElementById('sidebarOverlay').classList.toggle('mobile-open');" style="cursor:pointer; margin-right:10px; display:inline-block;" class="mobile-menu-btn">menu</i>
         <i class="material-icons-outlined" style="color:var(--c-primary);">local_laundry_service</i>
         <span>Admin Panel</span>
     </div>
     <div class="tb-right">
-        <div class="tb-notif" onclick="switchTab('notifications', document.getElementById('nav-notifications'))" title="Notifications">
+        <!-- Notifications toggle -->
+        <div class="tb-notif" onclick="document.getElementById('notifDropdown').classList.toggle('open');" title="Notifications">
             <i class="material-icons-outlined" style="font-size:1.4rem;">notifications</i>
         </div>
-        <div class="tb-avatar" style="background:linear-gradient(135deg,#6366f1,#4f46e5);" title="Admin">A</div>
     </div>
 </header>
 
 <div class="admin-wrap">
+    <!-- ── SIDEBAR OVERLAY (Mobile) ── -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="document.querySelector('.sidebar').classList.remove('mobile-open'); this.classList.remove('mobile-open');"></div>
+
     <!-- ── SIDEBAR ── -->
     <aside class="sidebar">
         <div class="sidebar-brand">
@@ -201,9 +205,16 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
         <div class="menu-item" id="nav-marketing" onclick="switchTab('marketing',this)">
             <i class="material-icons-outlined">campaign</i> Coupons & Notifs
         </div>
-        <div style="margin-top:auto; padding-top:2rem;">
-            <div class="menu-item" id="logoutBtn" style="color:#ef4444;">
-                <i class="material-icons-outlined">logout</i> Logout
+        <div style="margin-top:auto; padding:1.5rem 1rem; border-top:1px solid var(--border);">
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:1rem;">
+                <div style="background:linear-gradient(135deg,#6366f1,#4f46e5); color:white; width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:1.3rem;">A</div>
+                <div>
+                    <div style="font-weight:800; font-size:.95rem; color:var(--text);">System Admin</div>
+                    <div style="font-size:.75rem; font-weight:600; color:var(--muted);">Super Administrator</div>
+                </div>
+            </div>
+            <div class="menu-item hover-lift" id="logoutBtn" style="color:#ef4444; padding:0.75rem; justify-content:center; border:2px solid #fecaca; border-radius:10px; background:white;">
+                <i class="material-icons-outlined" style="margin-right:6px;">logout</i> Sign Out
             </div>
         </div>
     </aside>
@@ -450,13 +461,35 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
             </div>
         </section>
 
-        <!-- ══ PRODUCTS ══ -->
+        <!-- ══ CATALOG (Services, Products, Addons) ══ -->
         <section id="products" class="section-content">
             <div class="top-bar">
-                <div class="page-title">Product <span>Catalog</span></div>
-                <button class="btn-sm btn-primary" onclick="openModal('addProductModal')">+ Add Product</button>
+                <div class="page-title">Catalog <span>Management</span></div>
             </div>
-            <div id="productsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.2rem;margin-top:1rem;"></div>
+            
+            <div style="display:flex; gap:10px; margin-bottom:1.5rem; overflow-x:auto;">
+                <div class="chip active" id="chip-services" onclick="switchCatalogTab('services', this)">Services</div>
+                <div class="chip" id="chip-products" onclick="switchCatalogTab('products', this)">Products</div>
+                <div class="chip" id="chip-addons" onclick="switchCatalogTab('addons', this)">Add-ons</div>
+            </div>
+
+            <!-- Services Tab -->
+            <div id="cat-services" style="display:block;">
+                <button class="btn-sm btn-primary" style="margin-bottom:1rem;" onclick="openModal('addServiceModal')">+ Add Service</button>
+                <div id="servicesGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;"></div>
+            </div>
+
+            <!-- Products Tab -->
+            <div id="cat-products" style="display:none;">
+                <button class="btn-sm btn-primary" style="margin-bottom:1rem;" onclick="openModal('addProductModal')">+ Add Product</button>
+                <div id="productsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.2rem;"></div>
+            </div>
+
+            <!-- Addons Tab -->
+            <div id="cat-addons" style="display:none;">
+                <button class="btn-sm btn-primary" style="margin-bottom:1rem;" onclick="openModal('addAddonModal')">+ Add Add-on</button>
+                <div id="addonsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;"></div>
+            </div>
         </section>
 
         <!-- ══ MESSAGES ══ -->
@@ -623,6 +656,55 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 
 <!-- ══ PRODUCTS section moved inside main above ══ -->
 
+
+<!-- Add Service Modal -->
+<div class="modal-overlay" id="addServiceModal">
+    <div class="modal-box" style="max-width:400px;">
+        <button class="modal-close" onclick="closeModal('addServiceModal')">✕</button>
+        <div class="modal-title">Add New Service</div>
+        <form id="addServiceForm">
+            <div class="form-group">
+                <label>Service Name *</label>
+                <input type="text" name="name" class="form-control" required placeholder="e.g. Wash & Iron">
+            </div>
+            <div class="form-group">
+                <label>Material Icon Name</label>
+                <input type="text" name="icon" class="form-control" value="local_laundry_service" placeholder="e.g. local_laundry_service">
+                <small style="color:var(--muted);">From Google Material Icons</small>
+            </div>
+            <div style="display:flex;gap:0.75rem;margin-top:1rem;">
+                <button type="submit" class="btn-sm btn-primary btn-lg" style="flex:1;">Save Service</button>
+            </div>
+            <div class="form-msg" id="addServiceMsg"></div>
+        </form>
+    </div>
+</div>
+
+<!-- Add Addon Modal -->
+<div class="modal-overlay" id="addAddonModal">
+    <div class="modal-box" style="max-width:400px;">
+        <button class="modal-close" onclick="closeModal('addAddonModal')">✕</button>
+        <div class="modal-title">Add New Add-on</div>
+        <form id="addAddonForm">
+            <div class="form-group">
+                <label>Add-on Name *</label>
+                <input type="text" name="name" class="form-control" required placeholder="e.g. Stain Removal">
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <input type="text" name="description" class="form-control" placeholder="Short description">
+            </div>
+            <div class="form-group">
+                <label>Price (₹) *</label>
+                <input type="number" name="price" class="form-control" required min="0" step="1">
+            </div>
+            <div style="display:flex;gap:0.75rem;margin-top:1rem;">
+                <button type="submit" class="btn-sm btn-primary btn-lg" style="flex:1;">Save Add-on</button>
+            </div>
+            <div class="form-msg" id="addAddonMsg"></div>
+        </form>
+    </div>
+</div>
 
 <!-- Add Product Modal -->
 <div class="modal-overlay" id="addProductModal">
@@ -800,7 +882,11 @@ async function switchTab(id, el) {
     document.querySelectorAll('.section-content').forEach(s => s.classList.remove('active'));
     document.getElementById(id).classList.add('active');
     document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
-    (el || document.getElementById('nav-'+id)).classList.add('active');
+    if (el) el.classList.add('active');
+    else {
+        const navEl = document.getElementById('nav-'+id);
+        if (navEl) navEl.classList.add('active');
+    }
     if (id === 'marketing') loadCoupons();
     if (id === 'orders') loadOrders();
     if (id === 'markets') loadMarkets();
@@ -809,12 +895,27 @@ async function switchTab(id, el) {
     if (id === 'partners') loadPartners();
     if (id === 'returns') loadReturns('all');
     if (id === 'refunds') loadRefunds('requested', document.getElementById('rfChip-requested'));
-    if (id === 'products') loadProducts();
+    if (id === 'products') {
+        loadProducts();
+        loadServices();
+        loadAddons();
+    }
     if (id === 'messages') loadMessages('all');
     if (id === 'invoices') {
         loadAdminInvoices();
         loadReceiptSettings();
     }
+}
+
+function switchCatalogTab(tabId, el) {
+    document.querySelectorAll('.catalog-tab').forEach(t => t.style.display = 'none');
+    document.getElementById('cat-' + tabId).style.display = 'block';
+    
+    document.getElementById('chip-services').classList.remove('active');
+    document.getElementById('chip-products').classList.remove('active');
+    document.getElementById('chip-addons').classList.remove('active');
+    
+    el.classList.add('active');
 }
 
 // ── Toast ──
@@ -1590,6 +1691,69 @@ async function prodApi(action, payload = {}) {
         return await r.json();
     } catch(e) { return { success:false, message:'Server error' }; }
 }
+
+async function loadServices() {
+    const grid = document.getElementById('servicesGrid');
+    grid.innerHTML = '<div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading...</div>';
+    const d = await prodApi('get_services');
+    if (!d.success || !d.services.length) {
+        grid.innerHTML = '<div class="no-data" style="grid-column:1/-1"><i class="material-icons-outlined">local_laundry_service</i>No services yet.</div>';
+        return;
+    }
+    grid.innerHTML = d.services.map(s => `
+        <div class="card" style="display:flex;align-items:center;gap:15px;padding:1rem;">
+            <div style="background:#e0e7ff;color:var(--c-primary);width:45px;height:45px;border-radius:12px;display:flex;align-items:center;justify-content:center;">
+                <i class="material-icons-outlined">${s.icon}</i>
+            </div>
+            <div>
+                <div style="font-weight:700;">${s.name}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function loadAddons() {
+    const grid = document.getElementById('addonsGrid');
+    grid.innerHTML = '<div class="no-data"><i class="material-icons-outlined">hourglass_empty</i>Loading...</div>';
+    const d = await prodApi('get_addons');
+    if (!d.success || !d.addons.length) {
+        grid.innerHTML = '<div class="no-data" style="grid-column:1/-1"><i class="material-icons-outlined">extension</i>No add-ons yet.</div>';
+        return;
+    }
+    grid.innerHTML = d.addons.map(a => `
+        <div class="card" style="padding:1rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div style="font-weight:700;">${a.name}</div>
+                <div style="font-weight:800;color:var(--c-primary);">₹${a.price}</div>
+            </div>
+            <div style="font-size:0.85rem;color:var(--muted);margin-top:5px;">${a.description || 'No description'}</div>
+        </div>
+    `).join('');
+}
+
+document.getElementById('addServiceForm')?.addEventListener('submit', async(e)=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const msg = document.getElementById('addServiceMsg');
+    msg.style.display='block'; msg.style.color='#f59e0b'; msg.textContent='Saving...';
+    const d = await prodApi('add_service', Object.fromEntries(fd));
+    msg.textContent = d.message; msg.style.color = d.success?'#10b981':'#ef4444';
+    if(d.success) {
+        setTimeout(()=>{ closeModal('addServiceModal'); e.target.reset(); msg.style.display='none'; loadServices(); }, 1200);
+    }
+});
+
+document.getElementById('addAddonForm')?.addEventListener('submit', async(e)=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const msg = document.getElementById('addAddonMsg');
+    msg.style.display='block'; msg.style.color='#f59e0b'; msg.textContent='Saving...';
+    const d = await prodApi('add_addon', Object.fromEntries(fd));
+    msg.textContent = d.message; msg.style.color = d.success?'#10b981':'#ef4444';
+    if(d.success) {
+        setTimeout(()=>{ closeModal('addAddonModal'); e.target.reset(); msg.style.display='none'; loadAddons(); }, 1200);
+    }
+});
 
 async function loadProducts() {
     const grid = document.getElementById('productsGrid');
